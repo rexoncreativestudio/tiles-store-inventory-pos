@@ -260,6 +260,6 @@ export default function ManagerAuditDialog({
           </DialogFooter>
         </form>
       </DialogContent>
-    </Dialog> 
+    </Dialog>
   );
 }
