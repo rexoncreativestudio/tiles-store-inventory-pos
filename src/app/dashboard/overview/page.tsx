@@ -7,11 +7,9 @@ import DashboardOverviewClient from './components/dashboard-overview-client';
 // Import all necessary types
 import {
   SaleData,
-  PurchaseData,
   ExternalSaleData,
   ExpenseData,
   StockData,
-  BranchData,
 } from './types';
 
 export default async function DashboardOverviewPage({
@@ -62,21 +60,6 @@ export default async function DashboardOverviewPage({
 
   if (salesError) console.error("Error fetching sales for dashboard:", salesError.message);
 
-  // --- START: CORRECTED PURCHASES FETCHING ---
-  // Fetches purchases with a direct join to branches, matching the new schema.
-  const { data: allPurchasesData, error: purchasesError } = await supabase
-    .from('purchases')
-    .select(`
-        purchase_date, total_cost, branch_id,
-        branches(id, name)
-    `)
-    .gte('purchase_date', startDate.toISOString())
-    .lte('purchase_date', endDate.toISOString())
-    .returns<PurchaseData[]>();
-  // --- END: CORRECTED PURCHASES FETCHING ---
-
-  if (purchasesError) console.error("Error fetching purchases for dashboard:", purchasesError.message);
-
   // Fetch all External Sales data
   const { data: allExternalSalesData, error: externalSalesError } = await supabase
     .from('external_sales')
@@ -91,7 +74,6 @@ export default async function DashboardOverviewPage({
 
   if (externalSalesError) console.error("Error fetching external sales for dashboard:", externalSalesError.message);
 
-  // --- START: CORRECTED EXPENSES FETCHING ---
   // Fetches all expenses including the joined user data, consistent with other pages.
   const { data: allExpensesData, error: expensesError } = await supabase
     .from('expenses')
@@ -103,7 +85,6 @@ export default async function DashboardOverviewPage({
     .gte('date', startDate.toISOString())
     .lte('date', endDate.toISOString())
     .returns<ExpenseData[]>();
-  // --- END: CORRECTED EXPENSES FETCHING ---
 
   if (expensesError) console.error("Error fetching expenses for dashboard:", expensesError.message);
 
@@ -119,14 +100,6 @@ export default async function DashboardOverviewPage({
 
   if (stockError) console.error("Error fetching stock data for dashboard inventory:", stockError.message);
 
-  // Fetch all Branches
-  const { data: allBranchesData, error: branchesError } = await supabase
-    .from('branches')
-    .select('id, name')
-    .returns<BranchData[]>();
-
-  if (branchesError) console.error("Error fetching branches for dashboard:", branchesError.message);
-
   return (
     <div className="p-8">
       <h1 className="text-3xl font-bold mb-6">Dashboard Overview</h1>
@@ -135,7 +108,7 @@ export default async function DashboardOverviewPage({
       <DashboardOverviewClient
         allSalesData={allSalesData || []}
         allExternalSalesData={allExternalSalesData || []}
-        allExpensesData={allExpensesData || []}
+        allExpensesData={allExpensesData || []} 
         allStockData={allStockData || []}
         initialStartDate={startDate.toISOString()}
         initialEndDate={endDate.toISOString()}

@@ -1,7 +1,7 @@
 // src/components/ui/pagination.tsx
 "use client";
 
-import React, { useMemo } from 'react'; // Removed unused useState
+import React, { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 // import { cn } from '@/lib/utils'; // Removed unused cn, uncomment if needed
@@ -62,7 +62,7 @@ export default function Pagination({
     }
 
     return []; // Fallback, should not happen
-  }, [totalItems, totalPages, siblingCount, currentPage]); // Updated dependency array
+  }, [totalPages, siblingCount, currentPage]); // Remove 'totalItems' from dependency array
 
   const startIndex = Math.min((currentPage - 1) * itemsPerPage + 1, totalItems);
   const endIndex = Math.min(currentPage * itemsPerPage, totalItems);

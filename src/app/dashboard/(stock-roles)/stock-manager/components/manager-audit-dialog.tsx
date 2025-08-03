@@ -71,7 +71,8 @@ export default function ManagerAuditDialog({
     },
   });
 
-  const { fields } = useFieldArray({
+  // Updated generic parameters: third value must be a string (default is "id")
+  const { fields } = useFieldArray<ManagerAuditFormValues, "audited_products">({
     control: form.control,
     name: "audited_products",
   });
@@ -99,7 +100,7 @@ export default function ManagerAuditDialog({
   const onSubmit: SubmitHandler<ManagerAuditFormValues> = async (values) => {
     console.log("✅ Form validation successful. Attempting to submit to the database with these values:", values);
     setIsLoading(true);
-    
+
     const cleanedAuditedProducts = values.audited_products.map(product => ({
       ...product,
       category_id: product.category_id === '' ? null : product.category_id,
@@ -167,7 +168,7 @@ export default function ManagerAuditDialog({
                 control={form.control}
                 name="status"
                 render={({ field }) => (
-                   <Select onValueChange={field.onChange} value={field.value} disabled={isLoading}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={isLoading}>
                     <SelectTrigger id="status"><SelectValue placeholder="Select status" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="approved">Approve</SelectItem>
@@ -178,7 +179,7 @@ export default function ManagerAuditDialog({
               />
               {form.formState.errors.status && (<p className="text-red-500 text-sm mt-1">{form.formState.errors.status.message}</p>)}
             </div>
-             <div className="grid gap-2 sm:col-span-2">
+            <div className="grid gap-2 sm:col-span-2">
               <Label htmlFor="manager_notes">Manager Notes (Optional)</Label>
               <Textarea
                 id="manager_notes"
@@ -192,7 +193,7 @@ export default function ManagerAuditDialog({
           <Separator className="my-2" />
 
           <h3 className="text-lg font-semibold">Products for Audit</h3>
-          
+
           {form.formState.errors.audited_products?.message && (
             <p className="text-sm font-medium text-destructive bg-red-100 p-3 rounded-md">
               {form.formState.errors.audited_products.message}
@@ -202,7 +203,7 @@ export default function ManagerAuditDialog({
           <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
             {fields.length > 0 ? (
               fields.map((field, index) => (
-                <Card key={field.id}>
+                <Card key={field.id ?? index}>
                   <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
                     <div className="col-span-full lg:col-span-2 grid gap-2">
                       <Label>Product Details</Label>
@@ -260,5 +261,5 @@ export default function ManagerAuditDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );  
+  );
 }
