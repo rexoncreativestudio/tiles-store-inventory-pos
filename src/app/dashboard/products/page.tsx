@@ -1,23 +1,23 @@
-// src/app/dashboard/products/page.tsx
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
-import ProductManagementActions from './product-management-actions';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ProductItem, CategoryForProductForm } from './types'; // Removed UnitForProductForm import
+import ProductManagementHeader from './components/product-management-header';
+import { ProductItem, CategoryForProductForm } from './types';
+import ProductOverviewClient from './components/product-overview-client';
 
-
-
-export default async function ProductManagementPage() {
+export default async function ProductManagementPage({
+  searchParams,
+}: {
+  searchParams?: {
+    query?: string;
+    category?: string;
+    active?: string;
+    page?: string;
+    limit?: string;
+  };
+}) {
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } = {} } = await supabase.auth.getUser();
 
   if (!user) {
     redirect('/');
@@ -34,16 +34,37 @@ export default async function ProductManagementPage() {
     redirect('/dashboard/overview');
   }
 
-  const { data: products, error: productsError } = await supabase
+  // Pagination params
+  const page = Number(searchParams?.page) || 1;
+  const limit = Number(searchParams?.limit) || 10;
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let productsQuery = supabase
     .from('products')
     .select(`
       id, name, unique_reference, description, category_id, product_unit_abbreviation,
       purchase_price, sale_price, is_active, low_stock_threshold, image_url,
       categories(id, name, unit_abbreviation)
-    `)
-    .order('name', { ascending: true })
-    .returns<ProductItem[]>();
+    `, { count: 'exact' })
+    .order('name', { ascending: true });
 
+  if (searchParams?.query) {
+    const searchTerm = `%${searchParams.query.toLowerCase()}%`;
+    productsQuery = productsQuery.or(
+      `name.ilike.${searchTerm},unique_reference.ilike.${searchTerm},description.ilike.${searchTerm}`
+    );
+  }
+  if (searchParams?.category && searchParams.category !== 'all') {
+    productsQuery = productsQuery.eq('category_id', searchParams.category);
+  }
+  if (searchParams?.active && searchParams.active !== 'all') {
+    productsQuery = productsQuery.eq('is_active', searchParams.active === 'true');
+  }
+
+  productsQuery = productsQuery.range(from, to);
+
+  const { data: products, error: productsError, count: totalItems } = await productsQuery.returns<ProductItem[]>();
   if (productsError) console.error("Error fetching products:", productsError.message);
 
   const { data: categories, error: categoriesError } = await supabase
@@ -53,66 +74,21 @@ export default async function ProductManagementPage() {
 
   if (categoriesError) console.error("Error fetching categories:", categoriesError.message);
 
-  // REMOVED: Fetching units as the units table no longer exists.
-  /*
-  const { data: units, error: unitsError } = await supabase
-    .from('units')
-    .select('id, abbreviation, name')
-    .returns<UnitForProductForm[]>();
-
-  if (unitsError) console.error("Error fetching units:", unitsError.message);
-  */
-
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Product Management</h1>
-        {/* REMOVED 'units' PROP: Only pass categories now */}
-        <ProductManagementActions categories={categories || []} />
+      {/* --- Title/Filter Section --- */}
+      <div className="rounded-lg px-8 py-8 mb-8">
+        <ProductManagementHeader categories={categories || []} />
       </div>
-
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[50px]">SN</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Reference</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Unit</TableHead>
-              <TableHead className="text-right">Sale Price</TableHead>
-              <TableHead className="text-right">Stock Threshold</TableHead>
-              <TableHead className="text-center">Active</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {products && products.length > 0 ? (
-              products.map((product, idx) => (
-                <TableRow key={product.id}>
-                  <TableCell>{idx + 1}</TableCell>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>{product.unique_reference}</TableCell>
-                  <TableCell>{product.categories?.name || 'N/A'}</TableCell>
-                  <TableCell>{product.product_unit_abbreviation || 'N/A'}</TableCell>
-                  <TableCell className="text-right">{product.sale_price}</TableCell>
-                  <TableCell className="text-right">{product.low_stock_threshold}</TableCell>
-                  <TableCell className="text-center">{product.is_active ? 'Yes' : 'No'}</TableCell>
-                  <TableCell className="text-right">
-                    {/* REMOVED 'units' PROP here too */}
-                    <ProductManagementActions productToEdit={product} categories={categories || []} />
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center">
-                  No products found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+      {/* --- Product Table/Overview Section --- */}
+      <div className="bg-white rounded-lg shadow-md px-8 py-8">
+        <ProductOverviewClient
+          initialProducts={products || []}
+          initialCategories={categories || []}
+          currentPage={page}
+          itemsPerPage={limit}
+          totalItems={totalItems || 0}
+        />
       </div>
     </div>
   );

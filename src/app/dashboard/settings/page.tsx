@@ -2,12 +2,11 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator"; // Ensure Separator is imported
-import UnitsSettings from './units-settings'; // Client component for Units
-import CategoriesSettings from './categories-settings'; // Client component for Categories
-import BusinessSettingsForm from './business-settings-form'; // Client component for Business Settings
-import ReceiptPhrasesSettings from './receipt-phrases-settings'; // Client component for Receipt Phrases
+import { Separator } from "@/components/ui/separator";
+import CategoriesSettings from './categories-settings';
+import BusinessSettingsForm from './business-settings-form';
+
+
 
 export default async function SettingsPage() {
   const supabase = await createServerSupabaseClient();
@@ -17,7 +16,6 @@ export default async function SettingsPage() {
     redirect('/');
   }
 
-  // Enforce admin access on server-side
   const { data: currentUserProfile, error: profileError } = await supabase
     .from('users')
     .select('role')
@@ -29,63 +27,40 @@ export default async function SettingsPage() {
     redirect('/dashboard/overview');
   }
 
-  // Fetch initial data for each section here (Server-side)
-  // Units
-  const { data: units, error: unitsError } = await supabase.from('units').select('id, name, abbreviation');
-  if (unitsError) console.error("Error fetching units:", unitsError.message);
-
-  // Categories
-  const { data: categories, error: categoriesError } = await supabase.from('categories').select('id, name, description');
-  if (categoriesError) console.error("Error fetching categories:", categoriesError.message);
-
+  // Fetch initial data for remaining sections
   // Business Settings (single row)
-  // Ensure all fields match the expected type, especially the enum types
   const { data: businessSettings, error: bsError } = await supabase
     .from('business_settings')
-    .select('*, date_format, currency_position, default_receipt_language') // Explicitly select enum fields
+    .select('id, business_name, address_line1, address_line2, city, state_province, zip_postal_code, country, email, phone_number, tax_number, logo_url, receipt_prefix, date_format, currency_symbol, currency_position, default_receipt_language, created_at, updated_at')
     .single();
 
-  if (bsError && bsError.code !== 'PGRST116') { // PGRST116 is 'no rows found', which is fine for initial empty table
+  if (bsError && bsError.code !== 'PGRST116') {
     console.error("Error fetching business settings:", bsError.message);
   }
 
-  // Receipt Phrases
-  // Ensure created_at and updated_at are selected
-  const { data: receiptPhrases, error: rpError } = await supabase
-    .from('receipt_phrases')
-    .select('id, phrase_key, language, text, created_at, updated_at');
-  if (rpError) console.error("Error fetching receipt phrases:", rpError.message);
+  // Categories
+  const { data: categories, error: categoriesError } = await supabase
+    .from('categories')
+    .select('id, name, description, unit_abbreviation');
+  if (categoriesError) console.error("Error fetching categories:", categoriesError.message);
 
 
   return (
-    <div className="p-8">
+    <div className="p-8 space-y-8">
       <h1 className="text-3xl font-bold mb-6">Application Settings</h1>
-      <Separator className="mb-6" />
+      <Separator className="mb-8" />
 
-      <Tabs defaultValue="business" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="business">Business Info</TabsTrigger>
-          <TabsTrigger value="receipt">Receipts</TabsTrigger>
-          <TabsTrigger value="units">Units</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-        </TabsList>
+      {/* Business Info Section */}
+      <section id="business-info-settings" className="mb-8">
+        <h2 className="text-2xl font-semibold mb-4">Business Information</h2>
+        <BusinessSettingsForm initialData={businessSettings} />
+      </section>
 
-        <TabsContent value="business" className="mt-4">
-          <BusinessSettingsForm initialData={businessSettings} />
-        </TabsContent>
-
-        <TabsContent value="receipt" className="mt-4">
-          <ReceiptPhrasesSettings initialData={receiptPhrases || []} />
-        </TabsContent>
-
-        <TabsContent value="units" className="mt-4">
-          <UnitsSettings initialData={units || []} />
-        </TabsContent>
-
-        <TabsContent value="categories" className="mt-4">
-          <CategoriesSettings initialData={categories || []} />
-        </TabsContent>
-      </Tabs>
+      {/* Categories Section */}
+      <section id="categories-settings">
+        <h2 className="text-2xl font-semibold mb-4">Categories Management</h2>
+        <CategoriesSettings initialData={categories || []} />
+      </section>
     </div>
   );
-}
+} 

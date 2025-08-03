@@ -1,66 +1,78 @@
-// src/app/dashboard/purchases/page.tsx
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from '@/components/ui/button'; // Ensure Button is imported
-import RecordPurchaseActions from './record-purchase-actions'; // Client component for actions
+import PurchaseOverviewClient from './components/purchase-overview-client';
+import PurchaseActionsClient from './components/purchase-actions-client';
+import PurchasePaginationClient from './components/purchase-pagination-client';
+import { Card, CardContent } from '@/components/ui/card';
 
-// Define types for fetched data
-type PurchaseItem = {
+type ProductForPurchaseItem = {
   id: string;
-  purchase_id: string;
+  name: string;
+  unique_reference: string;
+  product_unit_abbreviation: string | null;
+  purchase_price?: number;
+};
+
+type PurchaseItemForDisplay = {
+  id: string;
   product_id: string;
   quantity: number;
   unit_purchase_price: number;
   total_cost: number;
-  products: {
-    id: string;
-    name: string;
-    unique_reference: string;
-  } | null;
+  note: string | null;
+  products: ProductForPurchaseItem | null;
 };
 
-type PurchaseRecord = {
+type PurchaseRecordForDisplay = {
   id: string;
   purchase_date: string;
-  warehouse_id: string;
+  warehouse_id: string | null;
   total_cost: number;
-  registered_by_user_id: string | null;
-  created_at: string;
-  updated_at: string;
-  warehouses: {
-    id: string;
-    name: string;
-  } | null;
-  users: {
-    id: string;
-    email: string;
-  } | null;
-  purchase_items: PurchaseItem[]; // Joined purchase items
+  status: string;
+  warehouses: { id: string; name: string; } | null;
+  purchase_items: PurchaseItemForDisplay[];
 };
 
-type ProductForSelect = {
-  id: string;
-  unique_reference: string;
-  name: string;
-  purchase_price: number; // To pre-fill purchase price
-};
-
-type WarehouseForSelect = {
+type WarehouseForFilter = {
   id: string;
   name: string;
 };
 
+type PurchaseRecordForEdit = {
+  id: string;
+  purchase_date: string;
+  warehouse_id: string | null;
+  total_cost: number;
+  status: string;
+  items: {
+    id: string;
+    product_id: string;
+    quantity: number;
+    unit_purchase_price: number;
+    note: string | null;
+  }[];
+};
 
-export default async function PurchasesPage() {
+function mapToEditRecord(purchase?: PurchaseRecordForDisplay): PurchaseRecordForEdit | undefined {
+  if (!purchase) return undefined;
+  return {
+    id: purchase.id,
+    purchase_date: purchase.purchase_date,
+    warehouse_id: purchase.warehouse_id,
+    total_cost: purchase.total_cost,
+    status: purchase.status,
+    items: (purchase.purchase_items ?? []).map((item) => ({
+      id: item.id ?? crypto.randomUUID(),
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_purchase_price: item.unit_purchase_price,
+      note: item.note,
+    })),
+  };
+}
+
+export default async function PurchaseManagementPage({ searchParams }: { searchParams?: Record<string, string> }) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -68,98 +80,86 @@ export default async function PurchasesPage() {
     redirect('/');
   }
 
-  // Enforce admin/manager access
   const { data: currentUserProfile, error: profileError } = await supabase
     .from('users')
-    .select('role')
+    .select('id, role')
     .eq('id', user.id)
     .single();
 
   if (profileError || !['admin', 'general_manager', 'branch_manager'].includes(currentUserProfile?.role || '')) {
-    console.error("Access Denied: Unauthorized role trying to access Purchases.");
     redirect('/dashboard/overview');
   }
 
-  // Fetch all purchases with related data
+  const currentUserId = currentUserProfile.id;
+
+  const page = parseInt(searchParams?.page || "1", 10);
+  const itemsPerPage = parseInt(searchParams?.itemsPerPage || "10", 10);
+  const fromIdx = (page - 1) * itemsPerPage;
+  const toIdx = fromIdx + itemsPerPage - 1;
+
+  const { count: totalPurchasesCount } = await supabase
+    .from('purchases')
+    .select('id', { count: 'exact', head: true });
+
   const { data: purchases, error: purchasesError } = await supabase
     .from('purchases')
     .select(`
-      id, purchase_date, warehouse_id, total_cost, registered_by_user_id, created_at, updated_at,
+      id, purchase_date, warehouse_id, total_cost, status,
       warehouses(id, name),
-      users(id, email),
-      purchase_items(id, product_id, quantity, unit_purchase_price, total_cost, products(id, name, unique_reference))
+      purchase_items(
+        id, product_id, quantity, unit_purchase_price, total_cost, note,
+        products(id, name, unique_reference, product_unit_abbreviation, purchase_price)
+      )
     `)
-    .order('purchase_date', { ascending: false }) // Order by most recent purchase
-    .returns<PurchaseRecord[]>();
+    .order('purchase_date', { ascending: false })
+    .range(fromIdx, toIdx)
+    .returns<PurchaseRecordForDisplay[]>();
 
-  if (purchasesError) {
-    console.error("Error fetching purchases:", purchasesError.message);
-    return <p className="text-red-500">Error loading purchase records: {purchasesError.message}</p>;
-  }
+  if (purchasesError) console.error("Error fetching purchases:", purchasesError.message);
 
-  // Fetch products and warehouses for the "Record New Purchase" form
-  const { data: productsForSelect, error: productsForSelectError } = await supabase
+  const { data: productsForSelection } = await supabase
     .from('products')
-    .select('id, unique_reference, name, purchase_price')
-    .returns<ProductForSelect[]>();
+    .select('id, name, unique_reference, product_unit_abbreviation, purchase_price')
+    .order('name', { ascending: true })
+    .returns<ProductForPurchaseItem[]>();
 
-  if (productsForSelectError) console.error("Error fetching products for purchase form:", productsForSelectError.message);
-
-  const { data: warehousesForSelect, error: warehousesForSelectError } = await supabase
+  const { data: warehouses } = await supabase
     .from('warehouses')
     .select('id, name')
-    .returns<WarehouseForSelect[]>();
+    .order('name', { ascending: true })
+    .returns<WarehouseForFilter[]>();
 
-  if (warehousesForSelectError) console.error("Error fetching warehouses for purchase form:", warehousesForSelectError.message);
-
+  const editId = searchParams?.edit ?? null;
+  const purchaseToEdit = mapToEditRecord(purchases?.find(p => p.id === editId));
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Purchases</h1>
-        <RecordPurchaseActions
-          products={productsForSelect || []}
-          warehouses={warehousesForSelect || []}
-          currentUserId={user.id}
+    <div className="p-4 md:p-8 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Purchase Management</h1>
+        <PurchaseActionsClient
+          purchaseToEdit={purchaseToEdit}
+          products={productsForSelection ?? []}
+          warehouses={warehouses ?? []}
+          currentUserId={currentUserId}
+          onPurchaseSubmitted={async () => { 'use server'; }}
         />
       </div>
-
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>SN</TableHead>
-              <TableHead>Purchase Date</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead>Total Cost</TableHead>
-              <TableHead>Registered By</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {purchases && purchases.length > 0 ? (
-              purchases.map((purchase, idx) => (
-                <TableRow key={purchase.id}>
-                  <TableCell>{idx + 1}</TableCell>
-                  <TableCell>{new Date(purchase.purchase_date).toLocaleString()}</TableCell>
-                  <TableCell>{purchase.warehouses?.name || 'N/A'}</TableCell>
-                  <TableCell>{purchase.total_cost.toFixed(2)}</TableCell>
-                  <TableCell>{purchase.users?.email || 'N/A'}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" /* onClick={() => viewPurchaseDetails(purchase.id)} */>View Details</Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
-                  No purchase records found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      
+      <Card>
+        <CardContent className="pt-6">
+            <PurchaseOverviewClient
+              initialPurchases={purchases ?? []}
+              initialWarehouses={warehouses ?? []}
+            />
+            <div className="flex justify-center mt-6">
+              <PurchasePaginationClient
+                totalItems={totalPurchasesCount ?? 0} 
+                itemsPerPage={itemsPerPage}
+                currentPage={page}
+              />
+            </div>
+        </CardContent>
+      </Card>
     </div>
-  );
-}
+  ); 
+} 

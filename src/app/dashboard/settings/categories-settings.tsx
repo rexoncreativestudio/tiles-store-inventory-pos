@@ -257,4 +257,4 @@ export default function CategoriesSettings({ initialData }: CategoriesSettingsPr
       </Dialog>
     </div>
   );
-}
+} 

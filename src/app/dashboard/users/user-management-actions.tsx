@@ -1,4 +1,3 @@
-// src/app/dashboard/users/user-management-actions.tsx
 "use client";
 
 import React, { useState } from 'react';
@@ -14,37 +13,37 @@ import { z } from "zod";
 import { useForm, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+// Updated user roles to include stock_controller and stock_manager
+const UserRoleOptions = [
+  'admin',
+  'general_manager',
+  'branch_manager',
+  'cashier',
+  'stock_controller',
+  'stock_manager'
+] as const;
+type UserRole = typeof UserRoleOptions[number];
 
-
-// Define the enum values as a const tuple
-const UserRoleOptions = ['admin', 'general_manager', 'branch_manager', 'cashier'] as const;
-type UserRole = typeof UserRoleOptions[number]; // Infer the union type from the const tuple
-
-// Define Zod schema for user form validation
 const userFormSchema = z.object({
   id: z.string().optional(),
   email: z.string().email({ message: "Invalid email address." }),
-  // CORRECTED: Password schema - simple optional string. Handle empty string transform before schema.
-  password: z.string().optional() // Password field is optional, will be string | undefined
-    .refine(val => !val || val.length >= 6, { // Validate length if a value is present
+  password: z.string().optional()
+    .refine(val => !val || val.length >= 6, {
       message: "Password must be at least 6 characters if provided."
     }),
-  // CORRECTED: Role schema - simple string, refine for validation
-  role: z.string() // Expect string from Select input
-    .refine((val): val is UserRole => UserRoleOptions.includes(val as UserRole), { // Refine to check if value is one of the allowed roles
+  role: z.string()
+    .refine((val): val is UserRole => UserRoleOptions.includes(val as UserRole), {
       message: "Please select a valid role.",
     }),
   branch_id: z.string().uuid("Invalid branch ID.").nullable(),
 });
 
-// Zod's .infer will correctly map optional string to string | undefined
 type UserFormValues = z.infer<typeof userFormSchema>;
 
-// Define the type for a user with their associated branch
 type UserWithBranch = {
   id: string;
   email: string;
-  role: UserRole; // Use the inferred UserRole type
+  role: UserRole;
   branch_id: string | null;
   branches?: { id: string; name: string } | null;
 };
@@ -68,12 +67,12 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
           email: userToEdit.email,
           role: userToEdit.role,
           branch_id: userToEdit.branch_id,
-          password: undefined, // Initialize password as undefined for updates (optional field)
+          password: undefined,
         }
       : {
           email: "",
-          password: "", // Required string for new user (will be validated by frontend check)
-          role: undefined, // undefined for initial empty state
+          password: "",
+          role: undefined,
           branch_id: null,
         },
   });
@@ -85,10 +84,10 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
         email: userToEdit.email,
         role: userToEdit.role,
         branch_id: userToEdit.branch_id,
-        password: undefined, // Reset password to undefined for updates
+        password: undefined,
       } : {
         email: "",
-        password: "", // Reset to empty string for new user (will be validated)
+        password: "",
         role: undefined,
         branch_id: null,
       });
@@ -100,16 +99,14 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
   const onSubmit: SubmitHandler<UserFormValues> = async (values) => {
     setIsLoading(true);
 
-    // CRITICAL: Manually transform password from "" to undefined *before* sending to API
     const passwordToSubmit = values.password === "" ? undefined : values.password;
 
     if (userToEdit) {
-      // Logic for updating existing user via API route
       const payload = {
         email: values.email,
-        role: values.role, // This role is a validated string
+        role: values.role,
         branch_id: values.branch_id,
-        password: passwordToSubmit, // Will be undefined or string
+        password: passwordToSubmit,
       };
 
       const response = await fetch(`/api/admin/users/${userToEdit.id}/update`, {
@@ -129,8 +126,7 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
       setIsDialogOpen(false);
       router.refresh();
     } else {
-      // Logic for creating new user
-      if (!values.password || values.password.trim().length === 0) { // Check if password is actually provided for new user
+      if (!values.password || values.password.trim().length === 0) {
         form.setError("password", { message: "Password is required for new users." });
         setIsLoading(false);
         return;
@@ -138,9 +134,9 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
 
       const payload = {
         email: values.email,
-        password: values.password, // This will be a string
-        role: values.role, // Validated string
-        branch_id: values.branch_id, // Pass as UUID or null
+        password: values.password,
+        role: values.role,
+        branch_id: values.branch_id,
       };
 
       const response = await fetch('/api/admin/users/create', {
@@ -325,4 +321,4 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
       </Dialog>
     </>
   );
-}
+} 

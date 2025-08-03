@@ -1,13 +1,27 @@
-// src/app/dashboard/overview/page.tsx
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { Button } from '@/components/ui/button';
 import { redirect } from 'next/navigation';
 import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { DashboardOverviewActions } from '@/components/dashboard-overview-actions'; // Import the client component
+import DashboardOverviewClient from './components/dashboard-overview-client';
 
-export default async function DashboardHomePage() {
+// Import all necessary types
+import {
+  SaleData,
+  PurchaseData,
+  ExternalSaleData,
+  ExpenseData,
+  StockData,
+  BranchData,
+} from './types';
+
+export default async function DashboardOverviewPage({
+  searchParams,
+}: {
+  searchParams?: {
+    dateFrom?: string;
+    dateTo?: string;
+  };
+}) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -15,109 +29,117 @@ export default async function DashboardHomePage() {
     redirect('/');
   }
 
-  const { data: userProfile, error: profileError } = await supabase
+  const { data: currentUserProfile, error: profileError } = await supabase
     .from('users')
-    .select('role, email')
+    .select('id, email, role, branch_id')
     .eq('id', user.id)
     .single();
 
-  if (profileError) {
-    console.error("Error fetching user profile for dashboard:", profileError.message);
-    return (
-      <div className="p-8 text-red-600">
-        <h1 className="text-xl font-bold mb-4">Error Loading Dashboard</h1>
-        <p>Could not load user profile: {profileError.message}</p>
-        <p>Please try again or contact support.</p>
-        <form action={async () => { 'use server'; const s = await createServerSupabaseClient(); await s.auth.signOut(); redirect('/'); }}>
-          <Button type="submit" variant="outline" className="mt-4">Logout</Button>
-        </form>
-      </div>
-    );
-  }
+  const allowedRoles = [
+    'admin', 'general_manager', 'branch_manager',
+    'cashier', 'stock_manager', 'stock_controller',
+  ];
 
-  const { data: businessSettings, error: bsError } = await supabase
-    .from('business_settings')
-    .select('*')
-    .single();
-
-  if (bsError && bsError.code !== 'PGRST116') {
-    console.error("Error fetching business settings for dashboard overview:", bsError.message);
-  }
-
-  const handleLogout = async () => {
-    'use server';
-    const logoutSupabase = await createServerSupabaseClient();
-    await logoutSupabase.auth.signOut();
+  if (profileError || !currentUserProfile || !allowedRoles.includes(currentUserProfile?.role || '')) {
+    console.error("Access Denied: Unauthorized role trying to access Dashboard Overview.");
     redirect('/');
-  };
+  }
+
+  const endDate = searchParams?.dateTo ? new Date(searchParams.dateTo) : new Date();
+  const startDate = searchParams?.dateFrom ? new Date(searchParams.dateFrom) : new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() - 30);
+
+  // Fetch all Sales data
+  const { data: allSalesData, error: salesError } = await supabase
+    .from('sales')
+    .select(`
+      sale_date, total_amount, branch_id,
+      branches(id, name),
+      sale_items(quantity, products(purchase_price))
+    `)
+    .gte('sale_date', startDate.toISOString())
+    .lte('sale_date', endDate.toISOString())
+    .returns<SaleData[]>();
+
+  if (salesError) console.error("Error fetching sales for dashboard:", salesError.message);
+
+  // --- START: CORRECTED PURCHASES FETCHING ---
+  // Fetches purchases with a direct join to branches, matching the new schema.
+  const { data: allPurchasesData, error: purchasesError } = await supabase
+    .from('purchases')
+    .select(`
+        purchase_date, total_cost, branch_id,
+        branches(id, name)
+    `)
+    .gte('purchase_date', startDate.toISOString())
+    .lte('purchase_date', endDate.toISOString())
+    .returns<PurchaseData[]>();
+  // --- END: CORRECTED PURCHASES FETCHING ---
+
+  if (purchasesError) console.error("Error fetching purchases for dashboard:", purchasesError.message);
+
+  // Fetch all External Sales data
+  const { data: allExternalSalesData, error: externalSalesError } = await supabase
+    .from('external_sales')
+    .select(`
+      sale_date, total_amount, branch_id,
+      external_sale_items(total_cost),
+      branches(id, name)
+    `)
+    .gte('sale_date', startDate.toISOString())
+    .lte('sale_date', endDate.toISOString())
+    .returns<ExternalSaleData[]>();
+
+  if (externalSalesError) console.error("Error fetching external sales for dashboard:", externalSalesError.message);
+
+  // --- START: CORRECTED EXPENSES FETCHING ---
+  // Fetches all expenses including the joined user data, consistent with other pages.
+  const { data: allExpensesData, error: expensesError } = await supabase
+    .from('expenses')
+    .select(`
+        date, amount, branch_id,
+        branches(id, name),
+        users(id, email)
+    `)
+    .gte('date', startDate.toISOString())
+    .lte('date', endDate.toISOString())
+    .returns<ExpenseData[]>();
+  // --- END: CORRECTED EXPENSES FETCHING ---
+
+  if (expensesError) console.error("Error fetching expenses for dashboard:", expensesError.message);
+
+  // Fetch all Stock data
+  const { data: allStockData, error: stockError } = await supabase
+    .from('stock')
+    .select(`
+        product_id, quantity, warehouse_id,
+        products(id, purchase_price),
+        warehouses(id, name)
+    `)
+    .returns<StockData[]>();
+
+  if (stockError) console.error("Error fetching stock data for dashboard inventory:", stockError.message);
+
+  // Fetch all Branches
+  const { data: allBranchesData, error: branchesError } = await supabase
+    .from('branches')
+    .select('id, name')
+    .returns<BranchData[]>();
+
+  if (branchesError) console.error("Error fetching branches for dashboard:", branchesError.message);
 
   return (
-    <div className="flex flex-col h-full bg-gray-100">
-      <header className="flex justify-between items-center py-4 px-6 bg-white border-b shadow-sm">
-        <h1 className="text-2xl font-semibold text-gray-800">Welcome, {userProfile?.email || user.email}!</h1>
-        <form action={handleLogout}>
-          <Button type="submit" variant="destructive">Logout</Button>
-        </form>
-      </header>
+    <div className="p-8">
+      <h1 className="text-3xl font-bold mb-6">Dashboard Overview</h1>
+      <Separator className="mb-6" />
 
-      <div className="p-8 flex-grow">
-        <p className="text-lg mb-4 text-gray-700">You are logged in as <span className="font-bold text-blue-600">{userProfile?.role || 'Unknown Role'}</span>.</p>
-        <p className="mb-6 text-gray-600">This is your dashboard. More content will be added here for specific roles (Admin, Manager, Cashier).</p>
-
-        {/* Business Overview Card (for Admins/Managers) */}
-        {['admin', 'general_manager', 'branch_manager'].includes(userProfile?.role || '') && (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Quick Business Overview</CardTitle>
-                <CardDescription>Key settings at a glance.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {businessSettings ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <h3 className="font-semibold text-gray-700">Business Name:</h3>
-                      <p className="text-gray-900">{businessSettings.business_name}</p>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-700">Address:</h3>
-                      <p className="text-gray-900">{businessSettings.address_line1}, {businessSettings.city}, {businessSettings.country}</p>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-700">Contact:</h3>
-                      <p className="text-gray-900">{businessSettings.email || 'N/A'} | {businessSettings.phone_number || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-700">Currency:</h3>
-                      <p className="text-gray-900">{`${businessSettings.currency_symbol} (Position: ${businessSettings.currency_position})`}</p>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-700">Date Format:</h3>
-                      <p className="text-gray-900">{businessSettings.date_format}</p>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-700">Receipt Prefix:</h3>
-                      <p className="text-gray-900">{businessSettings.receipt_prefix}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-gray-600">Business settings not configured. Please go to <a href="/dashboard/settings" className="text-blue-600 hover:underline">Settings</a> to set them up.</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Separator />
-          </div>
-        )}
-
-        {/* CORRECTED: Render DashboardOverviewActions ONLY ONCE */}
-        {/* It will now handle its own conditional rendering of buttons based on userRole */}
-        {userProfile?.role && (
-          <DashboardOverviewActions
-            userRole={userProfile.role}
-          />
-        )}
-      </div>
+      <DashboardOverviewClient
+        allSalesData={allSalesData || []}
+        allExternalSalesData={allExternalSalesData || []}
+        allExpensesData={allExpensesData || []}
+        allStockData={allStockData || []}
+        initialStartDate={startDate.toISOString()}
+        initialEndDate={endDate.toISOString()}
+      /> 
     </div>
   );
 }

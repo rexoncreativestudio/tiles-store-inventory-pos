@@ -120,3 +120,28 @@
     @apply bg-background text-foreground;
   }
 }
+
+
+:root {
+  --receipt-font-size: 14px; /* Change this value to adjust all receipt font sizes */
+  --receipt-heading-size: 16px; /* Change for headings */
+}
+
+.receipt-root {
+  font-size: var(--receipt-font-size);
+  /* Optional: font-family, color, etc. */
+}
+
+.receipt-heading {
+  font-size: var(--receipt-heading-size);
+  font-weight: bold;
+}
+
+.receipt-root .receipt-logo-img {
+  width: 400px !important;
+  height: 100px !important;
+  object-fit: contain;
+  display: block;
+  margin-bottom: 0.25rem;
+  /* Optional: adjust these values as needed */
+}
