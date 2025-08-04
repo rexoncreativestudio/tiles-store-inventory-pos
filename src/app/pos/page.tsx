@@ -255,4 +255,5 @@ export default async function PosPage() {
       initialExpenseCategoriesForReview={expenseCategoriesForPos || []}
     />
   );
-} 
+}
+ 

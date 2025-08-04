@@ -152,12 +152,6 @@ export default function PosInterfaceClientPaymentDialog({
               </label>
             </div>
           </div>
-          <div className="flex justify-between items-center text-lg font-semibold mt-2">
-            <span>Change Due:</span>
-            <span>
-              {formatCurrency((amountReceived || 0) - grandTotal)}
-            </span>
-          </div>
           <DialogFooter>
             <Button
               type="submit"
@@ -175,4 +169,4 @@ export default function PosInterfaceClientPaymentDialog({
       </DialogContent>
     </Dialog>
   );
-}
+} 

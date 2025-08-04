@@ -6,6 +6,7 @@ import AppShell from "@/components/app-shell";
 import StoreHydrator from "@/components/store-hydrator";
 import React from 'react';
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { Toaster } from "sonner"; // Import the Toaster component
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -40,7 +41,9 @@ export default async function RootLayout({
             <AppShell role={normalizedRole}>{children}</AppShell>
           </StoreHydrator>
         </ThemeProvider>
+        {/* Place the Toaster component here to make it globally available */}
+        <Toaster position="top-right" richColors />
       </body>
     </html>
-  ); 
+  );
 }

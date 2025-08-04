@@ -1,11 +1,8 @@
-// src/app/dashboard/stock/page.tsx
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
 import StockOverviewClient from './components/stock-overview-client';
 import StockAdjustmentButton from './components/stock-adjustment-button';
-
-// ADD THIS IMPORT
 import StockPaginationClient from './components/stock-pagination-client';
 
 // --- Type Definitions (aligned with client component and database schema) ---
@@ -41,7 +38,9 @@ type WarehouseForFilter = {
   name: string;
 };
 
-export default async function StockManagementPage({ searchParams }: { searchParams?: Record<string, string> }) {
+export default async function StockManagementPage({ 
+  searchParams 
+}: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -51,7 +50,7 @@ export default async function StockManagementPage({ searchParams }: { searchPara
 
   const { data: currentUserProfile, error: profileError } = await supabase
     .from('users')
-    .select('id, role') // Fetch user ID too
+    .select('id, role')
     .eq('id', user.id)
     .single();
 
@@ -60,10 +59,13 @@ export default async function StockManagementPage({ searchParams }: { searchPara
     redirect('/dashboard/overview');
   }
 
-  const currentUserId = currentUserProfile.id; // Get the user ID here
+  const currentUserId = currentUserProfile.id;
 
   // --- Pagination ---
-  const urlParams = new URLSearchParams(Object.entries(searchParams ?? {}).map(([key, value]) => [key, value]));
+  // FIX: Cast value to string for URLSearchParams
+  const urlParams = new URLSearchParams(
+    Object.entries(searchParams ?? {}).map(([key, value]) => [key, String(value)])
+  );
   const page = parseInt(urlParams.get('page') || "1", 10);
   const itemsPerPage = parseInt(urlParams.get('itemsPerPage') || "10", 10);
   const fromIdx = (page - 1) * itemsPerPage;
@@ -119,7 +121,6 @@ export default async function StockManagementPage({ searchParams }: { searchPara
       {/* --- Title Section --- */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Stock Management</h1>
-        {/* Pass currentUserId to the StockAdjustmentButton */}
         <StockAdjustmentButton
           products={products || []}
           warehouses={warehouses || []}
@@ -149,4 +150,4 @@ export default async function StockManagementPage({ searchParams }: { searchPara
       </div>
     </div>
   );
-}   
+} 

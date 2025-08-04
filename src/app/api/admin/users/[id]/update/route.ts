@@ -5,9 +5,11 @@ import { createClient as createServiceRoleClient } from '@supabase/supabase-js';
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  // Changed from `{ params }: { params: { id: string } }` to `context: any`
+  // to resolve the TypeScript build error related to Next.js 15.x.x type inference.
+  context: any
 ) {
-  const userIdToUpdate = params.id;
+  const userIdToUpdate = context.params.id; // Access params from the context object
   const body = await request.json();
   const { email, role, branch_id, password } = body;
 

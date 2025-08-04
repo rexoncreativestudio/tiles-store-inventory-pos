@@ -1,3 +1,4 @@
+// src/app/dashboard/stock/components/stock-overview-client.tsx
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -48,17 +49,17 @@ type WarehouseForFilter = {
   name: string;
 };
 
-// --- Add initialCategories prop to the props interface ---
 interface StockOverviewClientProps {
   initialProducts: ProductForStock[];
   initialStockDetails: ProductStockDetail[];
-  initialCategories: CategoryForFilter[];      // <-- Added!
+  initialCategories: CategoryForFilter[]; // <-- Added this line
   initialWarehouses: WarehouseForFilter[];
 }
 
 export default function StockOverviewClient({
   initialProducts,
   initialStockDetails,
+  initialCategories, // <-- Added this line so the prop is accepted
   initialWarehouses
 }: StockOverviewClientProps) {
   const [productSearchQuery, setProductSearchQuery] = useState('');

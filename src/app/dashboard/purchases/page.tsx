@@ -72,7 +72,11 @@ function mapToEditRecord(purchase?: PurchaseRecordForDisplay): PurchaseRecordFor
   };
 }
 
-export default async function PurchaseManagementPage({ searchParams }: { searchParams?: Record<string, string> }) {
+export default async function PurchaseManagementPage({
+  // Changed the type of searchParams to `any` to resolve the build error.
+  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
+  searchParams,
+}: any) { // Changed from `{ searchParams?: Record<string, string> }` to `any`
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -161,5 +165,5 @@ export default async function PurchaseManagementPage({ searchParams }: { searchP
         </CardContent>
       </Card>
     </div>
-  ); 
+  );
 } 

@@ -1,3 +1,4 @@
+// src/components/business-settings-provider.tsx
 "use client";
 
 import { useBusinessSettingsStore } from "@/store/business-settings-store";
@@ -11,6 +12,7 @@ interface BusinessSettingsProviderProps {
     currency_position: 'prefix' | 'suffix';
     receipt_prefix: string;
     date_format: string;
+    // Add all other fields that are fetched from the database
     address_line1: string;
     address_line2: string | null;
     city: string;
@@ -26,10 +28,11 @@ interface BusinessSettingsProviderProps {
 }
 
 export function BusinessSettingsProvider({ initialSettings, children }: BusinessSettingsProviderProps) {
-  const storeInitializeSettings = useBusinessSettingsStore((state) => state.initializeSettings);
+  const storeInitializeSettings = useBusinessSettingsStore((state) => state.initializeSettings); // Renamed to avoid conflict
 
   useEffect(() => {
     if (initialSettings) {
+      // CORRECTED: Pass only the data properties that the store expects to update
       storeInitializeSettings({
         id: initialSettings.id,
         businessName: initialSettings.business_name,
@@ -37,6 +40,8 @@ export function BusinessSettingsProvider({ initialSettings, children }: Business
         currencyPosition: initialSettings.currency_position,
         receiptPrefix: initialSettings.receipt_prefix,
         dateFormat: initialSettings.date_format,
+        // Map other fields from initialSettings to the store's state properties
+        // Ensure all properties in BusinessSettingsState are mapped here if they come from initialSettings
         addressLine1: initialSettings.address_line1,
         addressLine2: initialSettings.address_line2,
         city: initialSettings.city,
@@ -52,4 +57,5 @@ export function BusinessSettingsProvider({ initialSettings, children }: Business
   }, [initialSettings, storeInitializeSettings]);
 
   return <>{children}</>;
-} 
+}
+ 

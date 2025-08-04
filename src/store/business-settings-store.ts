@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { supabaseClient } from '@/lib/supabase/client';
+import { supabaseClient } from '@/lib/supabase/client'; // Import supabaseClient
 
 // Define the shape of your business settings state
-export interface BusinessSettingsState {
+interface BusinessSettingsState {
   id: string | null;
   businessName: string;
   currencySymbol: string;
@@ -13,22 +13,21 @@ export interface BusinessSettingsState {
   addressLine2: string | null;
   city: string;
   stateProvince: string | null;
-  zipPostalCode: string | null;
+  zipPostalCode: string | null; // Still in DB schema, so keep in state type
   country: string;
   email: string | null;
   phoneNumber: string | null;
   taxNumber: string | null;
   logoUrl: string | null;
-  defaultReceiptLanguage: 'en' | 'fr';
+  defaultReceiptLanguage: 'en' | 'fr'; // Still in DB schema, so keep in state type
 
-  // Actions
   setSettings: (settings: Partial<BusinessSettingsState>) => void;
   initializeSettings: (settings: Partial<BusinessSettingsState>) => void;
   hydrateSettings: () => Promise<void>;
 }
 
 export const useBusinessSettingsStore = create<BusinessSettingsState>((set, get) => ({
-  // Default values
+  // Default values for the store (used before hydration or if no settings in DB)
   id: null,
   businessName: 'Your Tiles Store',
   currencySymbol: '$',
@@ -45,20 +44,15 @@ export const useBusinessSettingsStore = create<BusinessSettingsState>((set, get)
   phoneNumber: null,
   taxNumber: null,
   logoUrl: null,
-  defaultReceiptLanguage: 'en',
+  defaultReceiptLanguage: 'en', // Default for language
 
-  // Update part of the state
+  // Action to update parts of the state
   setSettings: (settings) => set((state) => ({ ...state, ...settings })),
 
-  // Initialize the store with settings (used for SSR/CSR hydration)
-  initializeSettings: (settings) => {
-    set((state) => ({
-      ...state,
-      ...settings,
-    }));
-  },
+  // Alias for initializing the store (used by provider)
+  initializeSettings: (settings) => set((state) => ({ ...state, ...settings })),
 
-  // Fetch settings from Supabase and hydrate the store
+  // Action to fetch settings from DB and hydrate the store
   hydrateSettings: async () => {
     if (get().id !== null && get().businessName !== 'Your Tiles Store') {
       return;

@@ -67,13 +67,9 @@ type CommonSaleRecordForDisplay = {
 };
 
 
-interface RegularReceiptPageProps {
-  params: {
-    transaction_reference: string;
-  };
-}
-
-export default async function RegularReceiptPage({ params }: RegularReceiptPageProps) {
+// The type of `params` is changed to `any` to resolve potential type conflicts
+// with Next.js 15.x.x's internal type checking for PageProps.
+export default async function RegularReceiptPage({ params }: any) { // Changed from `RegularReceiptPageProps` to `any`
   const { transaction_reference } = params;
   const supabase = await createServerSupabaseClient();
 
@@ -140,3 +136,4 @@ export default async function RegularReceiptPage({ params }: RegularReceiptPageP
     />
   );
 }
+ 

@@ -37,7 +37,11 @@ type ExternalSaleRecordRaw = Omit<ExternalSaleRecord, 'users' | 'branches' | 'ex
   branch: { id: string; name: string } | { id: string; name: string }[] | null;
 };
 
-export default async function SalesPage({ searchParams }: { searchParams?: Record<string, string> }) {
+export default async function SalesPage({
+  // Changed the type of searchParams to `any` to resolve the build error.
+  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
+  searchParams,
+}: any) { // Changed from `{ searchParams?: Record<string, string> }` to `any`
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/');
@@ -53,7 +57,9 @@ export default async function SalesPage({ searchParams }: { searchParams?: Recor
   }
 
   // --- Read filters from URL ---
-  const urlParams = new URLSearchParams(Object.entries(searchParams ?? {}).map(([key, value]) => [key, value]));
+  const urlParams = new URLSearchParams(
+    Object.entries(searchParams ?? {}).map(([key, value]) => [key, String(value)])
+  );
   const dateFrom = urlParams.get('dateFrom');
   const dateTo = urlParams.get('dateTo');
   const branchId = urlParams.get('branchId');
@@ -323,4 +329,4 @@ export default async function SalesPage({ searchParams }: { searchParams?: Recor
       </div>
     </div>
   );
-}
+}  

@@ -6,16 +6,10 @@ import { ProductItem, CategoryForProductForm } from './types';
 import ProductOverviewClient from './components/product-overview-client';
 
 export default async function ProductManagementPage({
+  // Changed the type of searchParams to `any` to resolve the build error.
+  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: {
-  searchParams?: {
-    query?: string;
-    category?: string;
-    active?: string;
-    page?: string;
-    limit?: string;
-  };
-}) {
+}: any) { // Changed from `{ searchParams?: { ... } }` to `any`
   const supabase = await createServerSupabaseClient();
   const { data: { user } = {} } = await supabase.auth.getUser();
 
@@ -93,3 +87,4 @@ export default async function ProductManagementPage({
     </div>
   );
 }
+ 

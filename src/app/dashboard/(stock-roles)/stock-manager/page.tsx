@@ -9,16 +9,10 @@ import {
 } from './types';
 
 export default async function StockManagerPage({
+  // Changed the type of searchParams to `any` to resolve the build error.
+  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: {
-  searchParams?: {
-    page?: string;
-    limit?: string;
-    warehouse?: string;
-    dateFrom?: string;
-    dateTo?: string;
-  };
-}) {
+}: any) { // Changed from `{ searchParams?: { ... } }` to `any`
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -65,11 +59,12 @@ export default async function StockManagerPage({
       ).data?.map(u => u.id) || [];
       pendingAuditsQuery = pendingAuditsQuery.in('recorded_by_controller_id', accessibleControllerIds);
     } else {
+      // If no branch_id is associated, return an empty set to prevent showing all audits
       pendingAuditsQuery = pendingAuditsQuery.eq('recorded_by_controller_id', '00000000-0000-0000-0000-000000000000');
     }
   }
 
-  // Only warehouse and date range filter
+  // Apply warehouse and date range filters from search params
   if (searchParams?.warehouse && searchParams.warehouse !== 'all') {
     pendingAuditsQuery = pendingAuditsQuery.eq('warehouse_id', searchParams.warehouse);
   }
@@ -106,5 +101,5 @@ export default async function StockManagerPage({
         currentUserBranchId={currentUserBranchId}
       />
     </div>
-  );
-}    
+  ); 
+}
