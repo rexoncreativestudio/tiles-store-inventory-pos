@@ -1,9 +1,8 @@
-// src/store/business-settings-store.ts
 import { create } from 'zustand';
-import { supabaseClient } from '@/lib/supabase/client'; // Import supabaseClient
+import { supabaseClient } from '@/lib/supabase/client';
 
 // Define the shape of your business settings state
-interface BusinessSettingsState {
+export interface BusinessSettingsState {
   id: string | null;
   businessName: string;
   currencySymbol: string;
@@ -14,21 +13,22 @@ interface BusinessSettingsState {
   addressLine2: string | null;
   city: string;
   stateProvince: string | null;
-  zipPostalCode: string | null; // Still in DB schema, so keep in state type
+  zipPostalCode: string | null;
   country: string;
   email: string | null;
   phoneNumber: string | null;
   taxNumber: string | null;
   logoUrl: string | null;
-  defaultReceiptLanguage: 'en' | 'fr'; // Still in DB schema, so keep in state type
+  defaultReceiptLanguage: 'en' | 'fr';
 
+  // Actions
   setSettings: (settings: Partial<BusinessSettingsState>) => void;
-  // hydrateSettings: function to fetch and set initial/updated settings
+  initializeSettings: (settings: Partial<BusinessSettingsState>) => void;
   hydrateSettings: () => Promise<void>;
 }
 
 export const useBusinessSettingsStore = create<BusinessSettingsState>((set, get) => ({
-  // Default values for the store (used before hydration or if no settings in DB)
+  // Default values
   id: null,
   businessName: 'Your Tiles Store',
   currencySymbol: '$',
@@ -45,17 +45,22 @@ export const useBusinessSettingsStore = create<BusinessSettingsState>((set, get)
   phoneNumber: null,
   taxNumber: null,
   logoUrl: null,
-  defaultReceiptLanguage: 'en', // Default for language
+  defaultReceiptLanguage: 'en',
 
-  // Action to update parts of the state
+  // Update part of the state
   setSettings: (settings) => set((state) => ({ ...state, ...settings })),
 
-  // Action to fetch settings from DB and hydrate the store
+  // Initialize the store with settings (used for SSR/CSR hydration)
+  initializeSettings: (settings) => {
+    set((state) => ({
+      ...state,
+      ...settings,
+    }));
+  },
+
+  // Fetch settings from Supabase and hydrate the store
   hydrateSettings: async () => {
-    // Prevent re-fetching if already hydrated and not explicitly told to refresh
-    // We can add a timestamp or a 'hydrated' flag if more complex caching is needed
     if (get().id !== null && get().businessName !== 'Your Tiles Store') {
-      // console.log("Business settings already hydrated."); // Optional: for debugging
       return;
     }
 
@@ -64,9 +69,8 @@ export const useBusinessSettingsStore = create<BusinessSettingsState>((set, get)
       .select('*')
       .single();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 means "no rows found", which is fine for initial setup
+    if (error && error.code !== 'PGRST116') {
       console.error("Error hydrating business settings store:", error.message);
-      // Optionally set some error state or toast here, but don't block the app
       return;
     }
 
@@ -90,10 +94,8 @@ export const useBusinessSettingsStore = create<BusinessSettingsState>((set, get)
         logoUrl: settings.logo_url,
         defaultReceiptLanguage: settings.default_receipt_language,
       });
-      // console.log("Business settings store hydrated with data:", settings); // Optional: for debugging
     } else {
-      // If no settings found, the store will retain its initial default values
       console.log("No business settings found in DB, using default store values.");
     }
   },
-}));
+})); 

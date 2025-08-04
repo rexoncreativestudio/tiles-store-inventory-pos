@@ -149,4 +149,4 @@ export default async function StockManagementPage({ searchParams }: { searchPara
       </div>
     </div>
   );
-} 
+}   
