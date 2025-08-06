@@ -29,7 +29,7 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
     const checkAuthAndRole = async () => {
       const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
       if (authError || !user) {
-        router.push('/');
+        router.replace('/');
         return;
       }
 
@@ -41,7 +41,7 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
 
       const allowedRoles = ['admin', 'general_manager', 'stock_manager', 'stock_controller'];
       if (profileError || !profile || !allowedRoles.includes(profile.role || '')) {
-        router.push('/dashboard/overview');
+        router.replace('/dashboard/overview');
         return;
       }
 
@@ -52,13 +52,29 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
     checkAuthAndRole();
   }, [router]);
 
+  // Robust redirection for stock_controller and stock_manager
+  useEffect(() => {
+    if (!loadingProfile && userProfile) {
+      if (
+        (userProfile.role === 'stock_controller' && pathname !== roleAllowedPages.stock_controller)
+      ) {
+        window.location.replace(roleAllowedPages.stock_controller);
+      }
+      if (
+        (userProfile.role === 'stock_manager' && pathname !== roleAllowedPages.stock_manager)
+      ) {
+        window.location.replace(roleAllowedPages.stock_manager);
+      }
+    } 
+  }, [loadingProfile, userProfile, pathname]);
+
   const handleLogout = async () => {
     const { error } = await supabaseClient.auth.signOut();
     if (error) {
       toast.error("Logout failed.", { description: error.message });
     } else {
       toast.success("Logged out successfully!");
-      router.push('/');
+      router.replace('/');
     }
   };
 
@@ -75,13 +91,7 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
     return <div className="text-red-500 p-8">Access Denied.</div>;
   }
 
-  // Restrict stock_controller and stock_manager to their respective pages
-  if (
-    (userProfile.role === 'stock_controller' && pathname !== roleAllowedPages.stock_controller) ||
-    (userProfile.role === 'stock_manager' && pathname !== roleAllowedPages.stock_manager)
-  ) {
-    return <div className="text-red-500 p-8">Access Denied: You are only permitted on your designated dashboard page.</div>;
-  }
+  // No rendering Access Denied for stock roles - they are redirected above
 
   const showDashboardButton = ['admin', 'general_manager'].includes(userProfile.role);
 

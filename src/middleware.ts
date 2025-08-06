@@ -37,7 +37,6 @@ export async function middleware(request: NextRequest) {
 
   // If user is NOT authenticated and trying to access a protected dashboard route,
   // redirect them to the login page.
-  // Updated protected routes to match the new structure
   const protectedDashboardRoutes = [
     '/dashboard',
     '/dashboard/overview',
@@ -48,6 +47,26 @@ export async function middleware(request: NextRequest) {
 
   if (!session && protectedDashboardRoutes.some(path => request.nextUrl.pathname.startsWith(path))) {
     return NextResponse.redirect(new URL('/', request.nextUrl.origin)); // Redirect to login
+  }
+
+  // --- ADDED: Role-based dashboard overview protection ---
+  if (
+    session && request.nextUrl.pathname === '/dashboard/overview'
+  ) {
+    // Try to get user profile and role
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', session.user.id)
+      .single();
+
+    if (profile?.role === 'stock_controller') {
+      return NextResponse.redirect(new URL('/dashboard/stock-controller', request.nextUrl.origin));
+    }
+    if (profile?.role === 'stock_manager') {
+      return NextResponse.redirect(new URL('/dashboard/stock-manager', request.nextUrl.origin));
+    }
+    // Optionally redirect other forbidden roles here
   }
 
   return response;
