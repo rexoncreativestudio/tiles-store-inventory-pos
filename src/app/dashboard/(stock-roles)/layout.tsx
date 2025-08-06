@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { supabaseClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { LogOut, Loader2, Home } from 'lucide-react';
@@ -14,8 +14,14 @@ type UserProfile = {
   branch_id?: string | null;
 };
 
+const roleAllowedPages: Record<string, string> = {
+  stock_controller: '/dashboard/stock-controller',
+  stock_manager: '/dashboard/stock-manager',
+};
+
 export default function StockRolesLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
@@ -33,7 +39,8 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
         .eq('id', user.id)
         .single();
 
-      if (profileError || !profile || !['admin', 'general_manager', 'stock_manager', 'stock_controller'].includes(profile.role || '')) {
+      const allowedRoles = ['admin', 'general_manager', 'stock_manager', 'stock_controller'];
+      if (profileError || !profile || !allowedRoles.includes(profile.role || '')) {
         router.push('/dashboard/overview');
         return;
       }
@@ -68,12 +75,19 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
     return <div className="text-red-500 p-8">Access Denied.</div>;
   }
 
+  // Restrict stock_controller and stock_manager to their respective pages
+  if (
+    (userProfile.role === 'stock_controller' && pathname !== roleAllowedPages.stock_controller) ||
+    (userProfile.role === 'stock_manager' && pathname !== roleAllowedPages.stock_manager)
+  ) {
+    return <div className="text-red-500 p-8">Access Denied: You are only permitted on your designated dashboard page.</div>;
+  }
+
   const showDashboardButton = ['admin', 'general_manager'].includes(userProfile.role);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
       <header className="w-full bg-white border-b shadow-sm sticky top-0 z-10">
-        {/* REFINED HEADER: Uses a single flexbox row for consistent alignment */}
         <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-y-4 p-4">
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold text-gray-800">Stock Portal</h1>
@@ -101,6 +115,6 @@ export default function StockRolesLayout({ children }: { children: React.ReactNo
           {children}
         </div>
       </main>
-    </div>
+    </div>  
   );
 } 

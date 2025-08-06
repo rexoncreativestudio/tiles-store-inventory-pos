@@ -42,11 +42,14 @@ export default function AppShell({ children, role }: { children: React.ReactNode
 
   const showHeader = !isReceiptPage && !isMinimalLayoutPage;
 
+  // Determine if sidebar should be hidden (also hide on receipt page)
+  const hideSidebar = isMinimalLayoutPage || isReceiptPage;
+
   return (
     <div className="flex min-h-screen w-full flex-col">
       <div className="flex flex-1 w-full">
-        {/* Sidebar - Render only if not a minimal layout page */}
-        {!isMinimalLayoutPage && (
+        {/* Sidebar - Render only if not a minimal layout page and not a receipt page */}
+        {!hideSidebar && (
           <>
             {/* Desktop Sidebar */}
             <div className="hidden md:block">
@@ -66,7 +69,7 @@ export default function AppShell({ children, role }: { children: React.ReactNode
         {/* Main Content Area - Adjust margin if sidebar is hidden */}
         <div
           className={`flex flex-col flex-1 relative transition-all duration-300 ${
-            !isMinimalLayoutPage ? "md:ml-[var(--sidebar-width,72px)]" : ""
+            !hideSidebar ? "md:ml-[var(--sidebar-width,72px)]" : ""
           }`}
         >
           {/* Header - Hide on receipt and minimal layout pages */}
@@ -138,5 +141,5 @@ export default function AppShell({ children, role }: { children: React.ReactNode
         </footer>
       )}
     </div>
-  );
-} 
+  ); 
+}

@@ -459,7 +459,7 @@ export default function ExpensesReviewModalClient({
           <DialogFooter>
             <Button onClick={() => setIsViewDetailsDialogOpen(false)} className="mt-4">
               Close
-            </Button>
+            </Button> 
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -477,4 +477,4 @@ export default function ExpensesReviewModalClient({
       />
     </>
   );
-}
+} 

@@ -85,10 +85,18 @@ export default function AddPosExpenseModalClient({
   const canSelectBranch =
     ["admin", "general_manager", "branch_manager"].includes(currentUserRole);
 
+  // If cashier, get "Miscellaneous" category id
+  const isCashier = currentUserRole === "cashier";
+  const miscellaneousCategory =
+    isCashier
+      ? expenseCategories.find((cat) => cat.name.toLowerCase() === "miscellaneous")
+      : null;
+  const miscellaneousCategoryId = miscellaneousCategory?.id ?? "";
+
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
-      expense_category_id: "",
+      expense_category_id: isCashier ? miscellaneousCategoryId : "",
       branch_id: canSelectBranch ? "" : currentUserBranchId,
       amount: undefined,
       date: new Date(),
@@ -100,7 +108,7 @@ export default function AddPosExpenseModalClient({
   useEffect(() => {
     if (isOpen) {
       form.reset({
-        expense_category_id: "",
+        expense_category_id: isCashier ? miscellaneousCategoryId : "",
         branch_id: canSelectBranch ? "" : currentUserBranchId,
         amount: undefined,
         date: new Date(),
@@ -108,7 +116,7 @@ export default function AddPosExpenseModalClient({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, miscellaneousCategoryId, canSelectBranch, currentUserBranchId, isCashier]);
 
   // Simulate/create new expense for table (normally API call)
   const handleSubmit: SubmitHandler<ExpenseFormValues> = async (values) => {
@@ -154,6 +162,7 @@ export default function AddPosExpenseModalClient({
     }
   };
 
+  // --- FIELD ORDER: Date, Amount, Vendor/Notes, Expense Category, Branch ---
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg w-full">
@@ -168,86 +177,6 @@ export default function AddPosExpenseModalClient({
           onSubmit={form.handleSubmit(handleSubmit)}
           autoComplete="off"
         >
-          {/* Category */}
-          <div>
-            <Label htmlFor="expense_category_id">Expense Category</Label>
-            <Select
-              value={form.watch("expense_category_id")}
-              onValueChange={(val) =>
-                form.setValue("expense_category_id", val, { shouldValidate: true })
-              }
-              disabled={isSubmitting}
-            >
-              <SelectTrigger className="w-full h-11 mt-1" id="expense_category_id">
-                <SelectValue placeholder="Select a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {expenseCategories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {form.formState.errors.expense_category_id && (
-              <span className="text-xs text-red-500">
-                {form.formState.errors.expense_category_id.message}
-              </span>
-            )}
-          </div>
-
-          {/* Branch */}
-          <div>
-            <Label htmlFor="branch_id">Branch</Label>
-            <Select
-              value={form.watch("branch_id")}
-              onValueChange={(val) =>
-                form.setValue("branch_id", val, { shouldValidate: true })
-              }
-              disabled={!canSelectBranch || isSubmitting}
-            >
-              <SelectTrigger className="w-full h-11 mt-1" id="branch_id">
-                <SelectValue placeholder="Select a branch" />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((branch) => (
-                  <SelectItem key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {form.formState.errors.branch_id && (
-              <span className="text-xs text-red-500">
-                {form.formState.errors.branch_id.message}
-              </span>
-            )}
-          </div>
-
-          {/* Amount */}
-          <div>
-            <Label htmlFor="amount">Amount</Label>
-            <Input
-              type="number"
-              id="amount"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              className="h-11 mt-1"
-              {...form.register("amount", {
-                valueAsNumber: true,
-                required: true,
-              })}
-              disabled={isSubmitting}
-            />
-            {form.formState.errors.amount && (
-              <span className="text-xs text-red-500">
-                {form.formState.errors.amount.message}
-              </span>
-            )}
-          </div>
-
           {/* Date */}
           <div>
             <Label htmlFor="date">Date</Label>
@@ -283,6 +212,30 @@ export default function AddPosExpenseModalClient({
             )}
           </div>
 
+          {/* Amount */}
+          <div>
+            <Label htmlFor="amount">Amount</Label>
+            <Input
+              type="number"
+              id="amount"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              className="h-11 mt-1"
+              {...form.register("amount", {
+                valueAsNumber: true,
+                required: true,
+              })}
+              disabled={isSubmitting}
+            />
+            {form.formState.errors.amount && (
+              <span className="text-xs text-red-500">
+                {form.formState.errors.amount.message}
+              </span>
+            )}
+          </div>
+
           {/* Vendor Notes */}
           <div>
             <Label htmlFor="vendor_notes">Vendor/Notes</Label>
@@ -293,6 +246,69 @@ export default function AddPosExpenseModalClient({
               {...form.register("vendor_notes")}
               disabled={isSubmitting}
             />
+          </div>
+
+          {/* Expense Category */}
+          <div>
+            <Label htmlFor="expense_category_id">Expense Category</Label>
+            {isCashier ? (
+              // Show only label/value for Miscellaneous, no dropdown
+              <div className="h-11 flex items-center mt-1 rounded border px-3 bg-gray-50 text-muted-foreground">
+                {miscellaneousCategory?.name || "Miscellaneous"}
+              </div>
+            ) : (
+              <Select
+                value={form.watch("expense_category_id")}
+                onValueChange={(val) =>
+                  form.setValue("expense_category_id", val, { shouldValidate: true })
+                }
+                disabled={isSubmitting}
+              >
+                <SelectTrigger className="w-full h-11 mt-1" id="expense_category_id">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {expenseCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {form.formState.errors.expense_category_id && (
+              <span className="text-xs text-red-500">
+                {form.formState.errors.expense_category_id.message}
+              </span>
+            )}
+          </div>
+
+          {/* Branch */}
+          <div>
+            <Label htmlFor="branch_id">Branch</Label>
+            <Select
+              value={form.watch("branch_id")}
+              onValueChange={(val) =>
+                form.setValue("branch_id", val, { shouldValidate: true })
+              }
+              disabled={!canSelectBranch || isSubmitting}
+            >
+              <SelectTrigger className="w-full h-11 mt-1" id="branch_id">
+                <SelectValue placeholder="Select a branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.formState.errors.branch_id && (
+              <span className="text-xs text-red-500">
+                {form.formState.errors.branch_id.message}
+              </span>
+            )}
           </div>
 
           <DialogFooter>
@@ -311,5 +327,5 @@ export default function AddPosExpenseModalClient({
         </form>
       </DialogContent>
     </Dialog>
-  );
+  ); 
 } 

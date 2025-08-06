@@ -31,25 +31,18 @@ export default function PosInterfaceClientPaymentDialog({
   onSubmit,
   isProcessing,
   grandTotal,
-  formatCurrency,
+  formatCurrency: _formatCurrency, // <-- Prefix with underscore to fix ESLint
   form,
 }: PaymentDialogModalProps) {
-  // Watch the amountReceived value from the form
   const amountReceived = form.watch("amountReceived");
   const status = form.watch("status");
 
   useEffect(() => {
-    // If amount received is less than grandTotal, or there is any negative change due, set status to "held"
     if ((amountReceived || 0) < grandTotal) {
       if (status !== "held") {
         form.setValue("status", "held", { shouldValidate: true, shouldDirty: true });
       }
     }
-    // If amount is sufficient and status is not set by user, you can optionally set to "completed"
-    // else don't auto-set so user can override if they want to
-    // else if ((amountReceived || 0) >= grandTotal && status !== "completed") {
-    //   form.setValue("status", "completed", { shouldValidate: true, shouldDirty: true });
-    // }
   }, [amountReceived, grandTotal, status, form]);
 
   return (
@@ -76,7 +69,7 @@ export default function PosInterfaceClientPaymentDialog({
               step="0.01"
               min="0"
               max="9999999.99"
-              className="h-12 text-base"
+              className="h-12 text-2xl font-bold" // <-- Only text-2xl and font-bold
               placeholder="0.00"
               {...form.register("amountReceived", {
                 valueAsNumber: true,
@@ -169,4 +162,4 @@ export default function PosInterfaceClientPaymentDialog({
       </DialogContent>
     </Dialog>
   );
-} 
+}  

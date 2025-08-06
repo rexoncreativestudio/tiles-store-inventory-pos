@@ -1,20 +1,15 @@
-// src/app/dashboard/warehouses/components/warehouse-overview-client.tsx
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
-import { Search, Eye, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Eye, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-// import { cn } from '@/lib/utils'; // REMOVED: cn is not used
 import { supabaseClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import WarehouseManagementActions from './warehouse-management-actions'; // ADDED: import for WarehouseManagementActions
+import WarehouseManagementActions from './warehouse-management-actions';
 
-// --- Type Definitions (aligned with page.tsx) ---
 type WarehouseRecord = {
   id: string;
   name: string;
@@ -26,8 +21,7 @@ interface WarehouseOverviewClientProps {
 }
 
 export default function WarehouseOverviewClient({ initialWarehouses }: WarehouseOverviewClientProps) {
-  const router = useRouter(); // Used for router.refresh()
-  const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
+  const [warehouses, setWarehouses] = useState<WarehouseRecord[]>(initialWarehouses);
   const [isViewDetailsDialogOpen, setIsViewDetailsDialogOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<WarehouseRecord | null>(null);
@@ -37,18 +31,19 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedWarehouseForEdit, setSelectedWarehouseForEdit] = useState<WarehouseRecord | undefined>(undefined);
 
-  const filteredWarehouses = useMemo(() => {
-    let warehousesToDisplay = initialWarehouses;
-
-    if (warehouseSearchQuery) {
-      const lowerCaseQuery = warehouseSearchQuery.toLowerCase();
-      warehousesToDisplay = warehousesToDisplay.filter(w =>
-        w.name.toLowerCase().includes(lowerCaseQuery) ||
-        w.location?.toLowerCase().includes(lowerCaseQuery)
-      );
+  // Fetch warehouses from Supabase
+  const fetchWarehouses = useCallback(async () => {
+    const { data, error } = await supabaseClient
+      .from('warehouses')
+      .select('id, name, location')
+      .order('name', { ascending: true });
+    if (error) {
+      toast.error("Error loading warehouses", { description: error.message });
+      setWarehouses([]);
+    } else {
+      setWarehouses(data || []);
     }
-    return warehousesToDisplay;
-  }, [initialWarehouses, warehouseSearchQuery]);
+  }, []);
 
   const handleViewDetails = (warehouse: WarehouseRecord) => {
     setSelectedWarehouse(warehouse);
@@ -81,12 +76,11 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
       toast.success("Warehouse deleted successfully!");
       setIsConfirmDeleteOpen(false);
       setSelectedWarehouse(null);
-      router.refresh(); // Used router.refresh()
+      await fetchWarehouses(); // Update table after delete
     }
     setIsProcessingAction(false);
   };
 
-  // Renamed to explicitly reflect its purpose for view or delete modals
   const handleCloseViewOrDeleteModals = () => {
     setIsViewDetailsDialogOpen(false);
     setIsConfirmDeleteOpen(false);
@@ -94,27 +88,14 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
   };
 
   // Callback for when WarehouseManagementActions finishes submitting
-  const handleWarehouseManagementSubmitted = () => {
+  const handleWarehouseManagementSubmitted = async () => {
     setIsEditModalOpen(false);
     setSelectedWarehouseForEdit(undefined);
-    router.refresh(); // Used router.refresh()
+    await fetchWarehouses(); // Update table after add/edit
   };
 
   return (
     <div className="space-y-6">
-      {/* Search Bar */}
-      <div className="flex justify-end mb-6">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-          <Input
-            placeholder="Search warehouses by name or location..."
-            className="pl-10 w-full"
-            value={warehouseSearchQuery}
-            onChange={(e) => setWarehouseSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
       {/* Warehouses Table */}
       <Card>
         <CardHeader>
@@ -132,8 +113,8 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredWarehouses.length > 0 ? (
-                filteredWarehouses.map((warehouse, idx) => (
+              {warehouses.length > 0 ? (
+                warehouses.map((warehouse, idx) => (
                   <TableRow key={warehouse.id}>
                     <TableCell>{idx + 1}</TableCell>
                     <TableCell className="font-medium">{warehouse.name}</TableCell>
@@ -154,7 +135,7 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
               ) : (
                 <TableRow>
                   <TableCell colSpan={4} className="h-24 text-center text-gray-500">
-                    No warehouses found matching your criteria.
+                    No warehouses found.
                   </TableCell>
                 </TableRow>
               )}
@@ -203,7 +184,7 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
         </DialogContent>
       </Dialog>
 
-      {/* Warehouse Management Actions (for Add/Edit functionality) */}
+      {/* Warehouse Management Actions (for Edit functionality) */}
       <WarehouseManagementActions
         warehouseToEdit={selectedWarehouseForEdit}
         isOpen={isEditModalOpen}
@@ -212,4 +193,4 @@ export default function WarehouseOverviewClient({ initialWarehouses }: Warehouse
       />
     </div>
   );
-}
+} 

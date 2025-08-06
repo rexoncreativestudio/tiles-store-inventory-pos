@@ -123,12 +123,12 @@
 
 
 :root {
-  --receipt-font-size: 14px; /* Change this value to adjust all receipt font sizes */
-  --receipt-heading-size: 16px; /* Change for headings */
+  --receipt-font-size: 13px; /* Change this value to adjust all receipt font sizes */
+  --receipt-heading-size: 15px; /* Change for headings */
 }
 
 .receipt-root {
-  font-size: var(--receipt-font-size);
+  font-size: var(--receipt-font-size); 
   /* Optional: font-family, color, etc. */
 }
 

@@ -4,7 +4,6 @@ import React from 'react';
 import { Separator } from '@/components/ui/separator';
 import DashboardOverviewClient from './components/dashboard-overview-client';
 
-// Import all necessary types
 import {
   SaleData,
   ExternalSaleData,
@@ -13,10 +12,8 @@ import {
 } from './types';
 
 export default async function DashboardOverviewPage({
-  // Changed the type of searchParams to `any` to resolve the build error.
-  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: any) { // Changed from `{ searchParams?: { ... } }` to `any`
+}: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -30,9 +27,13 @@ export default async function DashboardOverviewPage({
     .eq('id', user.id)
     .single();
 
+  // Only allow these roles here
   const allowedRoles = [
-    'admin', 'general_manager', 'branch_manager',
-    'cashier', 'stock_manager', 'stock_controller',
+    'admin',
+    'general_manager',
+    'branch_manager',
+    'cashier',
+    // REMOVE: 'stock_manager', 'stock_controller'
   ];
 
   if (profileError || !currentUserProfile || !allowedRoles.includes(currentUserProfile?.role || '')) {
@@ -104,7 +105,7 @@ export default async function DashboardOverviewPage({
 
       <DashboardOverviewClient
         allSalesData={allSalesData || []}
-        allExternalSalesData={allExternalSalesData || []}
+        allExternalSalesData={allExternalSalesData || []} 
         allExpensesData={allExpensesData || []} 
         allStockData={allStockData || []}
         initialStartDate={startDate.toISOString()}
@@ -112,5 +113,4 @@ export default async function DashboardOverviewPage({
       /> 
     </div>
   );
-}
- 
+} 

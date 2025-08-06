@@ -27,6 +27,31 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { supabaseClient } from "@/lib/supabase/client";
 import { CategoryForProductForm, ProductItem } from "./types";
 
+// Tile dimensions suggestions
+const TILE_DIMENSIONS_SUGGESTIONS = [
+  "10cm x 10cm",
+  "15cm x 15cm",
+  "20cm x 20cm",
+  "20cm x 30cm",
+  "25cm x 25cm",
+  "30cm x 30cm",
+  "30cm x 60cm",
+  "33cm x 33cm",
+  "40cm x 40cm",
+  "45cm x 45cm",
+  "50cm x 50cm",
+  "60cm x 60cm",
+  "60cm x 120cm",
+  "75cm x 75cm",
+  "80cm x 80cm",
+  "90cm x 90cm",
+  "100cm x 100cm",
+  "120cm x 120cm",
+  "120cm x 240cm",
+  "120cm x 270cm",
+  "160cm x 320cm",
+];
+
 // Zod Schema: ensure nullable fields are handled as "" or undefined for form
 const productFormSchema = z.object({
   id: z.string().optional(),
@@ -58,6 +83,10 @@ export default function ProductManagementActions({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Autocomplete state for name field
+  const [nameInput, setNameInput] = useState("");
+  const [isNameFocused, setIsNameFocused] = useState(false);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
@@ -91,6 +120,7 @@ export default function ProductManagementActions({
           low_stock_threshold: productToEdit.low_stock_threshold,
           image_url: productToEdit.image_url ?? "",
         });
+        setNameInput(productToEdit.name ?? "");
       } else {
         form.reset({
           name: "",
@@ -104,6 +134,7 @@ export default function ProductManagementActions({
           low_stock_threshold: 0,
           image_url: "",
         });
+        setNameInput("");
       }
       form.clearErrors();
     }
@@ -206,6 +237,31 @@ export default function ProductManagementActions({
     return selectedCategory?.unit_abbreviation || "";
   }, [watchedCategoryId, categories]);
 
+  // Autocomplete suggestion list logic for name field
+  const getNameSuggestions = (input: string) => {
+    if (!input) return [];
+    const lower = input.toLowerCase();
+    return TILE_DIMENSIONS_SUGGESTIONS.filter((s) =>
+      s.toLowerCase().includes(lower)
+    );
+  };
+
+  const handleNameInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setNameInput(value);
+    form.setValue("name", value, { shouldValidate: true });
+  };
+
+  const handleNameSuggestionClick = (suggestion: string) => {
+    setNameInput(suggestion);
+    form.setValue("name", suggestion, { shouldValidate: true });
+    setIsNameFocused(false);
+  };
+
+  const handleNameBlur = () => {
+    setTimeout(() => setIsNameFocused(false), 100); // allow click
+  };
+
   return (
     <>
       {!productToEdit ? (
@@ -253,13 +309,31 @@ export default function ProductManagementActions({
             className="grid gap-4 py-4"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="grid gap-2">
+              <div className="grid gap-2 relative">
                 <Label htmlFor="name">Name</Label>
                 <Input
                   id="name"
-                  {...form.register("name")}
+                  value={nameInput}
+                  onChange={handleNameInputChange}
+                  onFocus={() => setIsNameFocused(true)}
+                  onBlur={handleNameBlur}
                   disabled={isLoading}
+                  autoComplete="off"
                 />
+                {isNameFocused &&
+                  getNameSuggestions(nameInput).length > 0 && (
+                    <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-300 shadow rounded mt-1 max-h-40 overflow-auto text-sm">
+                      {getNameSuggestions(nameInput).map((sugg) => (
+                        <li
+                          key={sugg}
+                          className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                          onMouseDown={() => handleNameSuggestionClick(sugg)}
+                        >
+                          {sugg}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 {form.formState.errors.name && (
                   <p className="text-red-500 text-sm mt-1">
                     {form.formState.errors.name.message}

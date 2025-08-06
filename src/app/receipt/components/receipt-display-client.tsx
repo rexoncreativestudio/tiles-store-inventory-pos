@@ -79,13 +79,12 @@ export default function ReceiptDisplayClient({ sale, businessSettings }: Receipt
   const amountInWords = `${numberToWords(sale.total_amount)}`.replace(/^\w/, c => c.toUpperCase());
 
   return (
-    <div className="receipt-root p-8 print:p-0 font-sans text-black bg-white">
+    <div className="receipt-root p-4 print:p-0 font-sans text-black bg-white">
       {/* HEADER */}
-      <div className="flex flex-row justify-between items-start mb-4 gap-2">
+      <div className="flex flex-row justify-between items-start mb-2 gap-2">
         {/* Business Info Left */}
-        <div className="flex flex-col items-start min-w-[220px] max-w-[420px]">
+        <div className="flex flex-col items-start min-w-[180px] max-w-[300px]">
           <div className="receipt-heading">{businessSettings?.business_name}</div>
-          {/* REMOVED Trusted Partner in Tiles and Vanities from here */}
           <div>
             <span className="font-bold">Address: </span>
             {businessSettings?.address_line1}
@@ -114,14 +113,14 @@ export default function ReceiptDisplayClient({ sale, businessSettings }: Receipt
             <Image
               src={businessSettings.logo_url}
               alt="Business Logo"
-              width={100}
-              height={60}
+              width={80}
+              height={40}
               className="mb-1 receipt-logo-img"
             />
           )}
         </div>
         {/* Sale Details Right */}
-        <div className="flex flex-col items-end min-w-[220px] max-w-[320px]">
+        <div className="flex flex-col items-end min-w-[150px] max-w-[200px]">
           <div><span className="font-bold">No:</span> {sale.transaction_reference}</div>
           <div><span className="font-bold">Date:</span> {formatDate(sale.sale_date)}</div>
           <div><span className="font-bold">Status:</span> {sale.status?.toUpperCase()}</div>
@@ -129,81 +128,83 @@ export default function ReceiptDisplayClient({ sale, businessSettings }: Receipt
             <span className="font-bold">Customer:</span> {sale.customer_name || 'Walk-in'}
           </div>
           <div>
-            <span className="font-bold">Phone:</span> {sale.customer_phone ? sale.customer_phone : '-'}
-          </div>
+            <span className="font-bold">Phone:</span> {sale.customer_phone ? sale.customer_phone : '-'}</div>
         </div>
       </div>
 
       {/* ITEMS TABLE */}
-      <div className="my-4">
-        <table className="w-full border border-black border-collapse">
+      <div className="my-2">
+        <table className="w-full border border-black border-collapse text-[13px]">
           <thead>
             <tr>
-              <th className="border border-black py-2 px-2 text-center font-semibold">SN</th>
-              <th className="border border-black py-2 px-2 font-semibold">Item Description</th>
-              <th className="border border-black py-2 px-2 text-center font-semibold">U.P</th>
-              <th className="border border-black py-2 px-2 text-center font-semibold">Qty</th>
-              <th className="border border-black py-2 px-2 text-right font-semibold">Subtotal</th>
+              <th className="border border-black py-1 px-1 text-center font-semibold min-w-[24px] w-[24px]">SN</th>
+              <th className="border border-black py-1 px-1 font-semibold min-w-[180px] w-[260px]">Item Description</th>
+              <th className="border border-black py-1 px-1 text-center font-semibold min-w-[75px] w-[85px]">Qty</th>
+              <th className="border border-black py-1 px-1 text-center font-semibold min-w-[54px] w-[65px]">U.P</th>
+              <th className="border border-black py-1 px-1 text-right font-semibold min-w-[64px] w-[70px]">Subtotal</th>
             </tr>
           </thead>
           <tbody>
             {sale.items.map((item, idx) => (
-              <React.Fragment key={item.id}>
-                <tr>
-                  <td className="border border-black py-2 px-2 text-center">{idx + 1}</td>
-                  <td className="border border-black py-2 px-2">
-                    {item.product_name_display}
-                    {item.note && <div className="block italic text-gray-500">Note: {item.note}</div>}
-                  </td>
-                  <td className="border border-black py-2 px-2 text-center">{formatCurrency(item.unit_sale_price)}</td>
-                  <td className="border border-black py-2 px-2 text-center">{item.quantity} {item.product_unit_display}</td>
-                  <td className="border border-black py-2 px-2 text-right">{formatCurrency(item.total_price)}</td>
-                </tr>
-              </React.Fragment>
+              <tr key={item.id}>
+                <td className="border border-black py-[2px] px-1 text-center">{idx + 1}</td>
+                <td className="border border-black py-[2px] px-1">
+                  {item.product_name_display}
+                  {item.note && item.note.trim() !== '' && (
+                    <> | <span className="italic text-gray-600">Note: {item.note}</span></>
+                  )}
+                </td>
+                <td className="border border-black py-[2px] px-1 text-center">
+                  {item.quantity} ({item.product_unit_display})
+                </td>
+                <td className="border border-black py-[2px] px-1 text-center">{formatCurrency(item.unit_sale_price)}</td>
+                <td className="border border-black py-[2px] px-1 text-right">{formatCurrency(item.total_price)}</td>
+              </tr>
             ))}
             {/* Totals Row: Qty total and Subtotal total on the same line */}
             <tr className="font-bold border-t border-black">
-              <td className="border border-black py-2 px-2 text-center" colSpan={3}></td>
-              <td className="border border-black py-2 px-2 text-center">{totalItemCount}</td>
-              <td className="border border-black py-2 px-2 text-right">{formatCurrency(sale.total_amount)}</td>
+              <td className="border border-black py-[2px] px-1 text-center" colSpan={2}></td>
+              <td className="border border-black py-[2px] px-1 text-center">{totalItemCount}</td>
+              <td className="border border-black py-[2px] px-1"></td>
+              <td className="border border-black py-[2px] px-1 text-right">{formatCurrency(sale.total_amount)}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       {/* Amount in Words, Total Payable, Paid Amount */}
-      <div className="flex flex-row items-center justify-between my-4 font-semibold">
-        <span><b>Amount In Words:</b> {amountInWords}</span>
-        <span><b>Total Payable:</b> {formatCurrency(sale.total_amount)}</span>
-        <span><b>Paid Amount:</b> {formatCurrency(sale.total_amount)}</span>
+      <div className="flex flex-row items-center justify-between my-2 font-semibold text-[13px]">
+        <span className="whitespace-nowrap"><b>Amount In Words:</b> {amountInWords}</span>
+        <span className="whitespace-nowrap"><b>Total Payable:</b> {formatCurrency(sale.total_amount)}</span>
+        <span className="whitespace-nowrap"><b>Paid Amount:</b> {formatCurrency(sale.total_amount)}</span>
       </div>
 
       {/* Signature Lines - evenly spaced, with line above */}
-      <div className="flex flex-row justify-between items-end mt-14 mb-4">
+      <div className="flex flex-row justify-between items-end mt-6 mb-2">
         <div className="w-1/3 flex flex-col items-center">
-          <div className="border-t border-black w-4/5 mb-2"></div>
-          <div className="text-center">Customer Signature</div>
+          <div className="border-t border-black w-4/5 mb-1"></div>
+          <div className="text-center text-[12px]">Customer Signature</div>
         </div>
         <div className="w-1/3 flex flex-col items-center">
-          <div className="border-t border-black w-4/5 mb-2"></div>
-          <div className="text-center">Warehouse Keeper Signature</div>
+          <div className="border-t border-black w-4/5 mb-1"></div>
+          <div className="text-center text-[12px]">Warehouse Keeper Signature</div>
         </div>
         <div className="w-1/3 flex flex-col items-center">
-          <div className="border-t border-black w-4/5 mb-2"></div>
-          <div className="text-center">Cashiers Signature</div>
+          <div className="border-t border-black w-4/5 mb-1"></div>
+          <div className="text-center text-[12px]">Cashiers Signature</div>
         </div>
       </div>
 
       {/* Thank You */}
-      <div className="mt-4 text-center font-bold receipt-heading">
+      <div className="mt-2 text-center font-bold receipt-heading text-[15px]">
         {businessSettings?.business_name || "our business"}
       </div>
-      <div className="text-center text-[15px] font-semibold mb-2">
+      <div className="text-center text-[13px] font-semibold mb-1">
         Trusted Partner in Tiles and Vanities
       </div>
 
       {/* Print Button */}
-      <div className="flex justify-center p-4 print:hidden">
+      <div className="flex justify-center p-2 print:hidden">
         <PrintButtonClient />
       </div>
     </div>

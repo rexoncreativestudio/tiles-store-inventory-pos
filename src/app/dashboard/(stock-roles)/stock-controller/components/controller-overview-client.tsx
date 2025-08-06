@@ -12,11 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import Pagination from '@/components/ui/pagination';
-import { Eye, CalendarIcon, Search, PlusCircle, Filter, Pencil } from 'lucide-react';
+import { Eye, CalendarIcon, Search, PlusCircle, Filter, Pencil, Download } from 'lucide-react';
 import { format, parseISO, isValid } from 'date-fns';
 import { cn } from '@/lib/utils';
+import jsPDF from 'jspdf';
 
-// Import the actual form and types
 import ControllerSubmissionForm from './controller-submission-form';
 import { PendingAuditRecord, WarehouseForController, ProductCategory } from '../types';
 
@@ -79,7 +79,6 @@ export default function ControllerOverviewClient({
     if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter); else params.delete('status');
     if (dateFrom) params.set('dateFrom', dateFrom.toISOString().split('T')[0]); else params.delete('dateFrom');
     if (dateTo) params.set('dateTo', dateTo.toISOString().split('T')[0]); else params.delete('dateTo');
-    
     updateURLAndRefresh(params);
     setIsFilterSheetOpen(false);
   };
@@ -89,14 +88,12 @@ export default function ControllerOverviewClient({
     setStatusFilter('all');
     setDateFrom(undefined);
     setDateTo(undefined);
-    
     const params = new URLSearchParams(searchParams.toString());
     params.delete('query');
     params.delete('status');
     params.delete('dateFrom');
     params.delete('dateTo');
     params.set('page', '1');
-    
     updateURLAndRefresh(params);
     setIsFilterSheetOpen(false);
   };
@@ -143,6 +140,82 @@ export default function ControllerOverviewClient({
     if (searchParams.get('dateFrom') || searchParams.get('dateTo')) count++;
     return count;
   }, [searchParams]);
+
+  // PDF Download
+  const handleDownloadPDF = (audit: PendingAuditRecord) => {
+    const doc = new jsPDF();
+
+    // Title
+    doc.setFontSize(18);
+    doc.text("Stock Audit Report", 105, 18, { align: 'center' });
+
+    // Audit Meta Info
+    doc.setFontSize(12);
+    let y = 30;
+    doc.text(`Audit ID: ${audit.id}`, 14, y);
+    y += 8;
+    doc.text(`Warehouse: ${audit.warehouses?.name ?? 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Warehouse Location: ${audit.warehouses?.location ?? 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Submission Date: ${format(parseISO(audit.submission_date), 'PPP p')}`, 14, y);
+    y += 8;
+    doc.text(`Status: ${audit.status.replace(/_/g, ' ')}`, 14, y);
+    y += 8;
+    doc.text(`Audit Date: ${audit.audit_date ? format(parseISO(audit.audit_date), 'PPP p') : 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Recorded By: ${audit.recorded_by_controller_user?.email ?? 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Audited By: ${audit.audited_by_manager_user?.email ?? 'N/A'}`, 14, y);
+
+    // Notes Section
+    y += 8;
+    doc.setFontSize(14);
+    doc.text("Notes", 14, y);
+    doc.setFontSize(12);
+    y += 8;
+    doc.text(`Controller Notes: ${audit.notes_from_controller || 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Manager Notes: ${audit.notes_from_manager || 'N/A'}`, 14, y);
+
+    // Products Table Section
+    y += 12;
+    doc.setFontSize(14);
+    doc.text("Submitted Products", 14, y);
+
+    // Table header
+    y += 6;
+    doc.setFontSize(12);
+    doc.setFillColor(230, 230, 230);
+    doc.rect(14, y - 4, 182, 8, 'F'); // Light gray background
+    doc.text("Product", 16, y);
+    doc.text("Category", 66, y);
+    doc.text("Qty", 116, y, { align: 'right' });
+    doc.text("Unit", 136, y, { align: 'right' });
+    doc.text("Ref", 176, y, { align: 'right' });
+
+    // Table rows
+    y += 8;
+    audit.submission_details.forEach((item) => {
+      const categoryName = allCategories.find(c => c.id === item.category_id)?.name || 'N/A';
+      doc.text(item.product_name, 16, y);
+      doc.text(categoryName, 66, y);
+      doc.text(String(item.quantity), 116, y, { align: 'right' });
+      doc.text(item.product_unit_abbreviation || '', 136, y, { align: 'right' });
+      doc.text(item.product_ref, 176, y, { align: 'right' });
+      y += 8;
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+    });
+
+    // Footer
+    doc.setFontSize(10);
+    doc.text(`Generated: ${format(new Date(), 'PPP p')}`, 14, 286);
+
+    doc.save(`StockAudit_${audit.id}.pdf`);
+  };
 
   return (
     <div className="p-2 sm:p-4 lg:p-6 bg-gray-50 min-h-screen">
@@ -191,7 +264,7 @@ export default function ControllerOverviewClient({
             </div>
           </div>
           <div>
-             <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
             <Select onValueChange={setStatusFilter} value={statusFilter}>
               <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="All Statuses" />
@@ -236,60 +309,60 @@ export default function ControllerOverviewClient({
         
         {/* Mobile Filter Button */}
         <div className="lg:hidden">
-            <Button variant="outline" className="w-full justify-center" onClick={() => setIsFilterSheetOpen(true)}>
-                <Filter className="mr-2 h-4 w-4" />
-                Filters
-                {activeFilterCount > 0 && (
-                    <span className="ml-2 inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-blue-500 rounded-full">{activeFilterCount}</span>
-                )}
-            </Button>
+          <Button variant="outline" className="w-full justify-center" onClick={() => setIsFilterSheetOpen(true)}>
+            <Filter className="mr-2 h-4 w-4" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-2 inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-blue-500 rounded-full">{activeFilterCount}</span>
+            )}
+          </Button>
         </div>
       </div>
 
       {/* Mobile Filter Sheet (Dialog) */}
       <Dialog open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
-          <DialogContent className="sm:max-w-md m-0 p-0 h-full flex flex-col">
-              <DialogHeader className="p-4 pb-4 border-b">
-                  <DialogTitle>Filters</DialogTitle>
-              </DialogHeader>
-              <div className="flex-grow p-4 space-y-6 overflow-y-auto">
-                  <div>
-                      <label className="text-sm font-medium text-gray-700 mb-1 block">Search</label>
-                      <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                          <Input placeholder="Search..." className="pl-10" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                      </div>
-                  </div>
-                  <div>
-                      <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
-                      <Select onValueChange={setStatusFilter} value={statusFilter}>
-                          <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
-                          <SelectContent>
-                              <SelectItem value="all">All Statuses</SelectItem>
-                              <SelectItem value="pending_audit">Pending Audit</SelectItem>
-                              <SelectItem value="approved">Approved</SelectItem>
-                              <SelectItem value="rejected">Rejected</SelectItem>
-                          </SelectContent>
-                      </Select>
-                  </div>
-                  <div>
-                      <label className="text-sm font-medium text-gray-700 mb-1 block">Date Range</label>
-                      <Popover>
-                          <PopoverTrigger asChild>
-                              <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}>
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {dateFrom ? (dateTo ? `${format(dateFrom, "LLL d, y")} - ${format(dateTo, "LLL d, y")}` : format(dateFrom, "LLL d, y")) : <span>Pick a date range</span>}
-                              </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0"><Calendar mode="range" selected={{ from: dateFrom, to: dateTo }} onSelect={(range) => { setDateFrom(range?.from); setDateTo(range?.to); }} /></PopoverContent>
-                      </Popover>
-                  </div>
+        <DialogContent className="sm:max-w-md m-0 p-0 h-full flex flex-col">
+          <DialogHeader className="p-4 pb-4 border-b">
+            <DialogTitle>Filters</DialogTitle>
+          </DialogHeader>
+          <div className="flex-grow p-4 space-y-6 overflow-y-auto">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input placeholder="Search..." className="pl-10" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
-              <DialogFooter className="p-4 pt-4 border-t flex-col sm:flex-row gap-2">
-                  <Button variant="ghost" onClick={resetFilters} className="w-full">Reset</Button>
-                  <Button onClick={applyFilters} className="w-full">Apply Filters</Button>
-              </DialogFooter>
-          </DialogContent>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
+              <Select onValueChange={setStatusFilter} value={statusFilter}>
+                <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="pending_audit">Pending Audit</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Date Range</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? (dateTo ? `${format(dateFrom, "LLL d, y")} - ${format(dateTo, "LLL d, y")}` : format(dateFrom, "LLL d, y")) : <span>Pick a date range</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0"><Calendar mode="range" selected={{ from: dateFrom, to: dateTo }} onSelect={(range) => { setDateFrom(range?.from); setDateTo(range?.to); }} /></PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <DialogFooter className="p-4 pt-4 border-t flex-col sm:flex-row gap-2">
+            <Button variant="ghost" onClick={resetFilters} className="w-full">Reset</Button>
+            <Button onClick={applyFilters} className="w-full">Apply Filters</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {/* Submissions List */}
@@ -301,30 +374,42 @@ export default function ControllerOverviewClient({
         <CardContent>
           {/* Mobile Card View */}
           <div className="lg:hidden space-y-4">
-              {pendingAudits.length > 0 ? pendingAudits.map(audit => (
-                  <div key={audit.id} className="bg-white p-3 rounded-lg border shadow-sm" onClick={() => audit.status === 'pending_audit' ? handleEditDetails(audit) : handleViewDetails(audit)}>
-                      <div className="flex justify-between items-start">
-                          <div>
-                              <p className="font-semibold text-gray-800">{audit.warehouses?.name || 'N/A'}</p>
-                              <p className="text-sm text-gray-500">{format(parseISO(audit.submission_date), 'MMM d, yyyy')}</p>
-                          </div>
-                          <div className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusChipClass(audit.status)}`}>
-                              {audit.status.replace(/_/g, ' ')}
-                          </div>
-                      </div>
-                      <div className="mt-4 flex justify-between items-center text-sm">
-                          <p className="text-gray-600">{audit.submission_details.length} Products</p>
-                          <div className="flex items-center gap-2">
-                            {audit.status === 'pending_audit' && <Pencil className="h-4 w-4 text-blue-500" />}
-                            <Eye className="h-4 w-4 text-gray-400" />
-                          </div>
-                      </div>
+            {pendingAudits.length > 0 ? pendingAudits.map(audit => (
+              <div key={audit.id} className="bg-white p-3 rounded-lg border shadow-sm" onClick={() => audit.status === 'pending_audit' ? handleEditDetails(audit) : handleViewDetails(audit)}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-semibold text-gray-800">{audit.warehouses?.name || 'N/A'}</p>
+                    <p className="text-sm text-gray-500">{format(parseISO(audit.submission_date), 'MMM d, yyyy')}</p>
                   </div>
-              )) : (
-                <div className="text-center py-10">
-                    <p className="text-gray-500">No submissions found.</p>
+                  <div className="flex gap-2 items-center">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusChipClass(audit.status)}`}>
+                      {audit.status.replace(/_/g, ' ')}
+                    </span>
+                    {audit.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="p-1"
+                        onClick={e => { e.stopPropagation(); handleDownloadPDF(audit); }}
+                        title="Download PDF"
+                      >
+                        <Download className="h-4 w-4 text-gray-700" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
+                <div className="mt-4 flex justify-between items-center text-sm">
+                  <p className="text-gray-600">{audit.submission_details.length} Products</p>
+                  <div className="flex items-center gap-2">
+                    {audit.status === 'pending_audit' && <Pencil className="h-4 w-4 text-blue-500" />}
+                    <Eye className="h-4 w-4 text-gray-400" />
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center py-10">
+                <p className="text-gray-500">No submissions found.</p>
+              </div>
+            )}
           </div>
           {/* Desktop Table View */}
           <div className="hidden lg:block overflow-x-auto">
@@ -346,22 +431,34 @@ export default function ControllerOverviewClient({
                     <TableCell>{format(parseISO(audit.submission_date), 'PPP')}</TableCell>
                     <TableCell>{audit.submission_details.length} Products</TableCell>
                     <TableCell>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusChipClass(audit.status)}`}>
-                           {audit.status.replace(/_/g, ' ')}
-                        </span>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusChipClass(audit.status)}`}>
+                        {audit.status.replace(/_/g, ' ')}
+                      </span>
                     </TableCell>
                     <TableCell>{audit.audit_date ? format(parseISO(audit.audit_date), 'PPP') : 'N/A'}</TableCell>
                     <TableCell className="text-right">
-                       {audit.status === 'pending_audit' && (
-                          <Button variant="ghost" size="icon" onClick={() => handleEditDetails(audit)} className="mr-2">
-                              <Pencil className="h-4 w-4" />
-                              <span className="sr-only">Edit</span>
-                          </Button>
-                        )}
+                      {audit.status === 'pending_audit' && (
+                        <Button variant="ghost" size="icon" onClick={() => handleEditDetails(audit)} className="mr-2">
+                          <Pencil className="h-4 w-4" />
+                          <span className="sr-only">Edit</span>
+                        </Button>
+                      )}
                       <Button variant="ghost" size="icon" onClick={() => handleViewDetails(audit)}>
                         <Eye className="h-4 w-4" />
                         <span className="sr-only">View Details</span>
                       </Button>
+                      {audit.status === 'approved' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownloadPDF(audit)}
+                          title="Download PDF"
+                          className="ml-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          <span className="sr-only">Download PDF</span>
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 )) : (
@@ -377,12 +474,12 @@ export default function ControllerOverviewClient({
       
       {totalItems > 0 && (
         <div className="mt-6">
-            <Pagination
-                totalItems={totalItems}
-                itemsPerPage={itemsPerPage}
-                currentPage={currentPage}
-                onPageChange={handlePageChange}
-            />
+          <Pagination
+            totalItems={totalItems}
+            itemsPerPage={itemsPerPage}
+            currentPage={currentPage}
+            onPageChange={handlePageChange}
+          />
         </div>
       )}
 
@@ -396,12 +493,12 @@ export default function ControllerOverviewClient({
           {selectedAuditDetails && (
             <div className="flex-grow overflow-y-auto pr-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm mb-4">
-                  <p><strong>Warehouse:</strong> {selectedAuditDetails.warehouses?.name}</p>
-                  <p><strong>Status:</strong> <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusChipClass(selectedAuditDetails.status)}`}>{selectedAuditDetails.status.replace(/_/g, ' ')}</span></p>
-                  <p><strong>Submission Date:</strong> {format(parseISO(selectedAuditDetails.submission_date), 'PPP p')}</p>
-                  <p><strong>Recorded By:</strong> {selectedAuditDetails.recorded_by_controller_user?.email || 'N/A'}</p>
-                  <p><strong>Audit Date:</strong> {selectedAuditDetails.audit_date ? format(parseISO(selectedAuditDetails.audit_date), 'PPP p') : 'N/A'}</p>
-                  <p><strong>Audited By:</strong> {selectedAuditDetails.audited_by_manager_user?.email || 'N/A'}</p>
+                <p><strong>Warehouse:</strong> {selectedAuditDetails.warehouses?.name}</p>
+                <p><strong>Status:</strong> <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusChipClass(selectedAuditDetails.status)}`}>{selectedAuditDetails.status.replace(/_/g, ' ')}</span></p>
+                <p><strong>Submission Date:</strong> {format(parseISO(selectedAuditDetails.submission_date), 'PPP p')}</p>
+                <p><strong>Recorded By:</strong> {selectedAuditDetails.recorded_by_controller_user?.email || 'N/A'}</p>
+                <p><strong>Audit Date:</strong> {selectedAuditDetails.audit_date ? format(parseISO(selectedAuditDetails.audit_date), 'PPP p') : 'N/A'}</p>
+                <p><strong>Audited By:</strong> {selectedAuditDetails.audited_by_manager_user?.email || 'N/A'}</p>
               </div>
               <div className="space-y-2 text-sm">
                 <p><strong>Controller Notes:</strong> {selectedAuditDetails.notes_from_controller || 'N/A'}</p>
@@ -419,11 +516,11 @@ export default function ControllerOverviewClient({
                   </TableHeader>
                   <TableBody>
                     {selectedAuditDetails.submission_details.length > 0 ? (
-                      selectedAuditDetails.submission_details.map((item, idx) => (
-                        <TableRow key={idx}>
+                      selectedAuditDetails.submission_details.map((item) => (
+                        <TableRow key={item.product_ref}>
                           <TableCell>
-                              <div className="font-medium">{item.product_name}</div>
-                              <div className="text-xs text-muted-foreground">Ref: {item.product_ref}</div>
+                            <div className="font-medium">{item.product_name}</div>
+                            <div className="text-xs text-muted-foreground">Ref: {item.product_ref}</div>
                           </TableCell>
                           <TableCell>{allCategories.find(c => c.id === item.category_id)?.name || 'N/A'}</TableCell>
                           <TableCell className="text-right">
@@ -445,6 +542,5 @@ export default function ControllerOverviewClient({
         </DialogContent>
       </Dialog>
     </div>
-  ); 
-}
- 
+  );
+} 

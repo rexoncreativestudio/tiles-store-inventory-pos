@@ -24,7 +24,9 @@ import {
 import { toast } from "sonner";
 import { supabaseClient } from "@/lib/supabase/client";
 import Pagination from "@/components/ui/pagination";
-import { Eye, Pencil, Trash2, CalendarIcon, Loader2 } from "lucide-react";
+import { Eye, Pencil, Trash2, CalendarIcon, Loader2, Download } from "lucide-react";
+
+import jsPDF from "jspdf";
 
 import {
   PendingAuditRecordForManager,
@@ -91,56 +93,110 @@ export default function ManagerAuditTable({
   const [auditToDeleteId, setAuditToDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  /**
-   * This effect hook automatically applies filters when their state changes.
-   * It constructs the URL with the current filter values and pushes it to the router.
-   */
+  // PDF download handler
+  const handleDownloadPDF = (audit: PendingAuditRecordForManager) => {
+    const doc = new jsPDF();
+
+    // Title
+    doc.setFontSize(18);
+    doc.text("Stock Audit Report", 105, 18, { align: 'center' });
+
+    // Audit Meta Info
+    doc.setFontSize(12);
+    let y = 30;
+    doc.text(`Audit ID: ${audit.id}`, 14, y);
+    y += 8;
+    doc.text(`Warehouse: ${audit.warehouses?.name ?? 'N/A'}`, 14, y);
+    y += 8;
+    // Fix: Use branch name instead of location (location does not exist)
+    doc.text(`Branch: ${audit.warehouses?.branches?.name ?? 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Submission Date: ${audit.submission_date ? format(parseISO(audit.submission_date), 'PPP p') : 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Status: ${audit.status.replace(/_/g, ' ')}`, 14, y);
+    y += 8;
+    doc.text(`Audit Date: ${audit.audit_date ? format(parseISO(audit.audit_date), 'PPP p') : 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Audited By: ${audit.audited_by_manager_user?.email ?? 'N/A'}`, 14, y);
+
+    // Notes Section
+    y += 8;
+    doc.setFontSize(14);
+    doc.text("Notes", 14, y);
+    doc.setFontSize(12);
+    y += 8;
+    doc.text(`Controller Notes: ${audit.notes_from_controller || 'N/A'}`, 14, y);
+    y += 8;
+    doc.text(`Manager Notes: ${audit.notes_from_manager || 'N/A'}`, 14, y);
+
+    // Products Table Section
+    y += 12;
+    doc.setFontSize(14);
+    doc.text("Submitted Products", 14, y);
+
+    // Table header
+    y += 6;
+    doc.setFontSize(12);
+    doc.setFillColor(230, 230, 230);
+    doc.rect(14, y - 4, 182, 8, 'F'); // Light gray background
+    doc.text("Product", 16, y);
+    doc.text("Reference", 66, y);
+    doc.text("Qty", 116, y, { align: 'right' });
+    doc.text("Unit", 146, y, { align: 'right' });
+
+    // Table rows
+    y += 8;
+    audit.submission_details.forEach((item) => {
+      doc.text(item.product_name, 16, y);
+      doc.text(item.product_ref, 66, y);
+      doc.text(String(item.quantity), 116, y, { align: 'right' });
+      doc.text(item.product_unit_abbreviation || '', 146, y, { align: 'right' });
+      y += 8;
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+    });
+
+    // Footer
+    doc.setFontSize(10);
+    doc.text(`Generated: ${format(new Date(), 'PPP p')}`, 14, 286);
+
+    doc.save(`StockAudit_${audit.id}.pdf`);
+  };
+
   useEffect(() => {
     // Prevent applying filters on the initial render
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
-
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", "1");
-
     if (warehouseFilter && warehouseFilter !== "all") {
       params.set("warehouse", warehouseFilter);
     } else {
       params.delete("warehouse");
     }
-
     if (dateFrom) {
       params.set("dateFrom", dateFrom.toISOString().split('T')[0]);
     } else {
       params.delete("dateFrom");
     }
-    
     if (dateTo) {
       params.set("dateTo", dateTo.toISOString().split('T')[0]);
     } else {
       params.delete("dateTo");
     }
-    
-    // Using router.push to navigate and trigger a data refetch
     router.push(`${window.location.pathname}?${params.toString()}`);
+  }, [warehouseFilter, dateFrom, dateTo, router, searchParams]);
 
-  }, [warehouseFilter, dateFrom, dateTo, router, searchParams]); // Dependency array ensures this runs only when filters change
-
-  /**
-   * Resets all filters to their default values, which in turn triggers the useEffect.
-   */
   const resetFilters = () => {
     setWarehouseFilter("all");
     setDateFrom(undefined);
     setDateTo(undefined);
   };
 
-  /**
-   * Handles pagination by updating the 'page' parameter in the URL.
-   * @param {number} page - The page number to navigate to.
-   */
   const handlePageChange = (page: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", page.toString());
@@ -301,6 +357,17 @@ export default function ManagerAuditTable({
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
+                    {audit.status === "approved" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDownloadPDF(audit)}
+                        title="Download PDF"
+                        className="p-2"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    )}
                     {audit.status !== "approved" && (
                       <Button
                         variant="destructive"
@@ -388,6 +455,18 @@ export default function ManagerAuditTable({
                             <Pencil className="h-4 w-4" />
                           </Button>
                         )}
+                        {audit.status === "approved" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDownloadPDF(audit)}
+                            title="Download PDF"
+                            className="ml-2"
+                          >
+                            <Download className="h-4 w-4" />
+                            <span className="sr-only">Download PDF</span>
+                          </Button>
+                        )}
                         {audit.status !== "approved" && (
                           <Button
                             variant="destructive"
@@ -445,6 +524,10 @@ export default function ManagerAuditTable({
               <p>
                 <strong>Warehouse:</strong>{" "}
                 {selectedAuditDetails.warehouses?.name || "N/A"}
+              </p>
+              <p>
+                <strong>Branch:</strong>{" "}
+                {selectedAuditDetails.warehouses?.branches?.name || "N/A"}
               </p>
               <p>
                 <strong>Status:</strong>{" "}
@@ -567,4 +650,4 @@ export default function ManagerAuditTable({
       />
     </div>
   );
-}
+} 

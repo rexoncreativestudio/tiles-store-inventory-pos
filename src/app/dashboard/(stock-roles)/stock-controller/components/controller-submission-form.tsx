@@ -39,14 +39,13 @@ import {
   ControllerStockSubmissionFormValues,
   controllerStockSubmissionFormSchema,
   ProductCategory,
-  PendingAuditRecord, // Import PendingAuditRecord
+  PendingAuditRecord,
 } from '../types';
 
 interface ControllerSubmissionFormProps {
   warehouses: WarehouseForController[];
   allCategories: ProductCategory[];
   recordedByUserId: string;
-  // Use the precise PendingAuditRecord type for type safety
   initialSubmission?: PendingAuditRecord | null;
   isOpen?: boolean;
   onClose?: () => void;
@@ -58,6 +57,31 @@ function toDatetimeLocal(date: Date): string {
   return format(new Date(date), "yyyy-MM-dd'T'HH:mm");
 }
 
+// Tile dimensions suggestions
+const TILE_DIMENSIONS_SUGGESTIONS = [
+  "10cm x 10cm",
+  "15cm x 15cm",
+  "20cm x 20cm",
+  "20cm x 30cm",
+  "25cm x 25cm",
+  "30cm x 30cm",
+  "30cm x 60cm",
+  "33cm x 33cm",
+  "40cm x 40cm",
+  "45cm x 45cm",
+  "50cm x 50cm",
+  "60cm x 60cm",
+  "60cm x 120cm",
+  "75cm x 75cm",
+  "80cm x 80cm",
+  "90cm x 90cm",
+  "100cm x 100cm",
+  "120cm x 120cm",
+  "120cm x 240cm",
+  "120cm x 270cm",
+  "160cm x 320cm",
+];
+
 export default function ControllerSubmissionForm({
   warehouses,
   allCategories,
@@ -68,6 +92,10 @@ export default function ControllerSubmissionForm({
   onSubmissionSuccess = () => {},
 }: ControllerSubmissionFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+
+  // Store which product name input is focused and its value for auto-complete
+  const [focusedProductIndex, setFocusedProductIndex] = useState<number | null>(null);
+  const [productNameInputs, setProductNameInputs] = useState<{ [index: number]: string }>({});
 
   const form = useForm<ControllerStockSubmissionFormValues>({
     resolver: zodResolver(controllerStockSubmissionFormSchema),
@@ -102,7 +130,6 @@ export default function ControllerSubmissionForm({
   useEffect(() => {
     if (isOpen) {
       if (initialSubmission) {
-        // If editing, populate form with initialSubmission data
         form.reset({
           submission_id: initialSubmission.id,
           warehouse_id: initialSubmission.warehouse_id,
@@ -118,7 +145,6 @@ export default function ControllerSubmissionForm({
           notes_from_controller: initialSubmission.notes_from_controller || '',
         });
       } else {
-        // If creating new, reset to default values
         form.reset({
           submission_id: undefined,
           warehouse_id: '',
@@ -128,6 +154,7 @@ export default function ControllerSubmissionForm({
         });
       }
       form.clearErrors();
+      setProductNameInputs({});
     }
   }, [isOpen, initialSubmission, form]);
 
@@ -169,6 +196,35 @@ export default function ControllerSubmissionForm({
     setIsLoading(false);
   };
 
+  // --- AUTOCOMPLETE LOGIC ---
+  // Filter suggestions based on current input value (case-insensitive, show only if input is non-empty)
+  const getSuggestions = (input: string) => {
+    if (!input) return [];
+    const lower = input.toLowerCase();
+    return TILE_DIMENSIONS_SUGGESTIONS.filter(s => s.toLowerCase().includes(lower));
+  };
+
+  // Handle product name input change for each index
+  const handleProductNameChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setProductNameInputs(prev => ({ ...prev, [index]: value }));
+    form.setValue(`products_submitted.${index}.product_name`, value, { shouldValidate: true });
+  };
+
+  // On selecting a suggestion, set the input value & close suggestions
+  const handleSuggestionClick = (index: number, suggestion: string) => {
+    setProductNameInputs(prev => ({ ...prev, [index]: suggestion }));
+    form.setValue(`products_submitted.${index}.product_name`, suggestion, { shouldValidate: true });
+    setFocusedProductIndex(null); // close suggestion dropdown
+  };
+
+  // Hide suggestions when input loses focus, but delay to allow click
+  const handleBlur = () => {
+    setTimeout(() => setFocusedProductIndex(null), 100);
+  };
+
+  // --- END AUTOCOMPLETE LOGIC ---
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
@@ -179,7 +235,6 @@ export default function ControllerSubmissionForm({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex-grow overflow-y-auto pr-6 pl-2 space-y-4">
-          {/* Form content remains the same... */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="submission_date">Submission Date</Label>
@@ -211,9 +266,31 @@ export default function ControllerSubmissionForm({
             {fields.map((field, index) => (
               <Card key={field.id} className="p-4 bg-gray-50">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
-                  <div className="space-y-2 lg:col-span-2">
+                  {/* --- Product Name Autocomplete --- */}
+                  <div className="space-y-2 lg:col-span-2 relative">
                     <Label>Product Name</Label>
-                    <Input {...form.register(`products_submitted.${index}.product_name`)} disabled={isLoading} />
+                    <Input
+                      value={productNameInputs[index] ?? form.getValues(`products_submitted.${index}.product_name`)}
+                      onChange={e => handleProductNameChange(index, e)}
+                      onFocus={() => setFocusedProductIndex(index)}
+                      onBlur={handleBlur}
+                      disabled={isLoading}
+                      autoComplete="off"
+                    />
+                    {/* Only show suggestions if focused and input is non-empty */}
+                    {focusedProductIndex === index && getSuggestions(productNameInputs[index] ?? form.getValues(`products_submitted.${index}.product_name`)).length > 0 && (
+                      <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-300 shadow rounded mt-1 max-h-40 overflow-auto text-sm">
+                        {getSuggestions(productNameInputs[index] ?? form.getValues(`products_submitted.${index}.product_name`)).map((sugg) => (
+                          <li
+                            key={sugg}
+                            className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                            onMouseDown={() => handleSuggestionClick(index, sugg)}
+                          >
+                            {sugg}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {form.formState.errors.products_submitted?.[index]?.product_name && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].product_name?.message}</p>}
                   </div>
                   <div className="space-y-2">

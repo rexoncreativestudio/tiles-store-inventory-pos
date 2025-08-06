@@ -1,4 +1,3 @@
-// src/app/dashboard/branches/branch-management-actions.tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -7,7 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
 import { supabaseClient } from '@/lib/supabase/client';
 import { Pencil, PlusCircle, Trash2 } from 'lucide-react';
 import { z } from "zod";
@@ -16,9 +14,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 
 // Define Zod schema for branch form validation
 const branchFormSchema = z.object({
-  id: z.string().optional(), // Optional for new branch
+  id: z.string().optional(),
   name: z.string().min(2, { message: "Branch name must be at least 2 characters." }),
-  location: z.string().optional(), // Optional, but can be empty string if not provided
+  location: z.string().optional(),
 });
 
 type BranchFormValues = z.infer<typeof branchFormSchema>;
@@ -31,13 +29,13 @@ interface BranchManagementActionsProps {
     created_at: string;
     updated_at: string;
   };
+  onBranchChanged?: () => void; // Callback for parent to refresh branch list
 }
 
-export default function BranchManagementActions({ branchToEdit }: BranchManagementActionsProps) {
+export default function BranchManagementActions({ branchToEdit, onBranchChanged }: BranchManagementActionsProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
   const form = useForm<BranchFormValues>({
     resolver: zodResolver(branchFormSchema),
@@ -45,7 +43,7 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
       ? {
           id: branchToEdit.id,
           name: branchToEdit.name,
-          location: branchToEdit.location || '', // Convert null to empty string for input field
+          location: branchToEdit.location || '',
         }
       : {
           name: "",
@@ -54,7 +52,6 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
   });
 
   useEffect(() => {
-    // Reset form when dialog opens/closes or branchToEdit changes
     if (isDialogOpen) {
       form.reset(branchToEdit ? {
         id: branchToEdit.id,
@@ -71,41 +68,35 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
   const onSubmit = async (values: BranchFormValues) => {
     setIsLoading(true);
     let error = null;
-
-    // Sanitize location: store null if empty string
     const payload = {
       name: values.name,
       location: values.location || null,
     };
 
     if (branchToEdit) {
-      // Update existing branch
       const { error: dbUpdateError } = await supabaseClient
         .from('branches')
         .update(payload)
         .eq('id', branchToEdit.id);
       error = dbUpdateError;
-
       if (error) {
         toast.error("Failed to update branch.", { description: error.message });
       } else {
         toast.success("Branch updated successfully!");
         setIsDialogOpen(false);
-        router.refresh(); // Revalidate data on the server
+        if (onBranchChanged) onBranchChanged();
       }
     } else {
-      // Create new branch
       const { error: dbInsertError } = await supabaseClient
         .from('branches')
         .insert(payload);
       error = dbInsertError;
-
       if (error) {
         toast.error("Failed to add new branch.", { description: error.message });
       } else {
         toast.success("New branch added successfully!");
         setIsDialogOpen(false);
-        router.refresh();
+        if (onBranchChanged) onBranchChanged();
       }
     }
     setIsLoading(false);
@@ -125,7 +116,7 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
     } else {
       toast.success("Branch deleted successfully!");
       setIsConfirmDeleteOpen(false);
-      router.refresh();
+      if (onBranchChanged) onBranchChanged();
     }
     setIsLoading(false);
   };
@@ -134,14 +125,12 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
 
   return (
     <>
-      {/* Button to add new branch (only appears if branchToEdit is not provided) */}
       {!branchToEdit && (
         <Button onClick={() => setIsDialogOpen(true)}>
           <PlusCircle className="mr-2 h-4 w-4" /> Add Branch
         </Button>
       )}
 
-      {/* Buttons for editing/deleting existing branch (only appears if branchToEdit is provided) */}
       {branchToEdit && (
         <div className="flex items-center space-x-2">
           <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(true)} title="Edit Branch">
@@ -153,7 +142,6 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
         </div>
       )}
 
-      {/* Add/Edit Branch Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -202,13 +190,12 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirm Deletion</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete branch &quot;{branchToEdit?.name}&quot;? This action cannot be undone. {/* Escaped quote */}
+              Are you sure you want to delete branch &quot;{branchToEdit?.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -222,5 +209,5 @@ export default function BranchManagementActions({ branchToEdit }: BranchManageme
         </DialogContent>
       </Dialog>
     </>
-  );
+  ); 
 }

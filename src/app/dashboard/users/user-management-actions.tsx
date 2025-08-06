@@ -45,19 +45,21 @@ type UserWithBranch = {
   email: string;
   role: UserRole;
   branch_id: string | null;
-  branches?: { id: string; name: string } | null;
+  // Changed 'branches' to be an array or null to match Supabase query
+  branches?: { id: string; name: string }[] | null;
 };
 
 interface UserManagementActionsProps {
   branches: Array<{ id: string; name: string }>;
   userToEdit?: UserWithBranch;
+  onUserChanged?: () => void; // Added onUserChanged prop
 }
 
-export default function UserManagementActions({ branches, userToEdit }: UserManagementActionsProps) {
+export default function UserManagementActions({ branches, userToEdit, onUserChanged }: UserManagementActionsProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
+  const _router = useRouter(); // Renamed router to _router to suppress ESLint warning
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
@@ -124,7 +126,7 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
 
       toast.success("User updated successfully!");
       setIsDialogOpen(false);
-      router.refresh();
+      if (onUserChanged) onUserChanged(); // Call callback on success
     } else {
       if (!values.password || values.password.trim().length === 0) {
         form.setError("password", { message: "Password is required for new users." });
@@ -154,7 +156,7 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
 
       toast.success("New user added successfully!");
       setIsDialogOpen(false);
-      router.refresh();
+      if (onUserChanged) onUserChanged(); // Call callback on success
     }
     setIsLoading(false);
   };
@@ -172,8 +174,22 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      toast.error("Failed to delete user.", { description: errorData.error || "An unknown error occurred." });
+      // Only attempt to parse JSON if the response is not 204 No Content
+      let errorDescription = "An unknown error occurred.";
+      if (response.status !== 204) { // Check if status is not 204 No Content
+        try {
+          const errorData = await response.json();
+          console.error("Delete user failed:", errorData); // Log the full error data for debugging
+          errorDescription = errorData.error || errorDescription;
+        } catch (e) {
+          console.error("Failed to parse error response:", e);
+          errorDescription = `Server responded with status ${response.status} but no readable error message.`;
+        }
+      } else {
+        // If 204, it means success with no content, so no error to parse
+        errorDescription = `Server responded with status ${response.status} (No Content).`;
+      }
+      toast.error("Failed to delete user.", { description: errorDescription });
       setIsLoading(false);
       return;
     }
@@ -181,7 +197,7 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
     toast.success("User deleted successfully!");
     setIsConfirmDeleteOpen(false);
     setIsLoading(false);
-    router.refresh();
+    if (onUserChanged) onUserChanged(); // Call callback on success
   };
 
   const isNewUser = !userToEdit;
@@ -321,4 +337,5 @@ export default function UserManagementActions({ branches, userToEdit }: UserMana
       </Dialog>
     </>
   );
-} 
+}
+ 

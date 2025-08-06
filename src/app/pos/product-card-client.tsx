@@ -80,7 +80,7 @@ export default function ProductCardClient({
           <p className={cn("text-sm", getStockStatusClass(product.id, product.low_stock_threshold))}>
             No Stock Records
           </p>
-        )} 
+        )}  
       </CardContent>
     </Card>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +29,7 @@ import { useCurrencyFormatter } from "@/lib/formatters";
 type ExternalSaleItem = {
   id: string;
   product_name: string;
-  product_category_name: string | null; // FIXED: must match types/sales
+  product_category_name: string | null;
   product_unit_name: string;
   quantity: number;
   unit_sale_price: number;
@@ -58,7 +58,7 @@ export type ExternalSaleRecord = {
 const externalSaleItemSchema = z.object({
   id: z.string(),
   product_name: z.string(),
-  product_category_name: z.string().nullable(), // FIXED: allow null
+  product_category_name: z.string().nullable(),
   product_unit_name: z.string(),
   quantity: z.number().min(1, { message: "Quantity must be at least 1." }),
   unit_sale_price: z.number().min(0, { message: "Unit Sale Price required." }),
@@ -94,7 +94,7 @@ export default function ExternalSaleEditModalClient({
   const initialItems = (externalSaleToEdit.external_sale_items ?? []).map(item => ({
     id: item.id,
     product_name: item.product_name,
-    product_category_name: item.product_category_name ?? null, // always null or string
+    product_category_name: item.product_category_name ?? null,
     product_unit_name: item.product_unit_name,
     quantity: item.quantity,
     unit_sale_price: item.unit_sale_price,
@@ -120,30 +120,20 @@ export default function ExternalSaleEditModalClient({
     name: "items",
   });
 
-  const watchedItems = form.watch("items");
-
-  // Compute total cost and total price
-  const overallTotalCost = useMemo(
-    () =>
-      (watchedItems || []).reduce(
-        (sum, item) => sum + (Number(item.purchase_price) * Number(item.quantity)),
-        0
-      ),
-    [watchedItems]
+  // Live calculation of totals - always reflects current inputs!
+  const overallTotalCost = (form.watch("items") || []).reduce(
+    (sum, item) => sum + (Number(item.purchase_price) * Number(item.quantity)),
+    0
   );
-  const overallTotalPrice = useMemo(
-    () =>
-      (watchedItems || []).reduce(
-        (sum, item) => sum + (Number(item.unit_sale_price) * Number(item.quantity)),
-        0
-      ),
-    [watchedItems]
+  const overallTotalPrice = (form.watch("items") || []).reduce(
+    (sum, item) => sum + (Number(item.unit_sale_price) * Number(item.quantity)),
+    0
   );
 
   // Build the external_sale_data object for the function (include id for update)
   const buildExternalSaleData = (values: ExternalSaleEditFormValues) => {
     return {
-      id: externalSaleToEdit.id, // <-- CRUCIAL for update!
+      id: externalSaleToEdit.id,
       sale_date: externalSaleToEdit.sale_date ?? new Date().toISOString(),
       cashier_id: externalSaleToEdit.cashier_id ?? null,
       branch_id: externalSaleToEdit.branch_id ?? null,
@@ -158,7 +148,7 @@ export default function ExternalSaleEditModalClient({
       items: values.items.map(item => ({
         id: item.id,
         product_name: item.product_name,
-        product_category_name: item.product_category_name ?? "", // always string for db
+        product_category_name: item.product_category_name ?? "",
         product_unit_name: item.product_unit_name,
         quantity: item.quantity,
         unit_sale_price: item.unit_sale_price,
@@ -358,4 +348,4 @@ export default function ExternalSaleEditModalClient({
       </DialogContent>
     </Dialog>
   );
-}
+} 

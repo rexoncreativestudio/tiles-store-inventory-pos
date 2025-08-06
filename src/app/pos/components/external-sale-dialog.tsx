@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,58 @@ export interface ExternalSaleDialogProps {
   initialValues?: Partial<ExternalSaleFormValues>;
 }
 
+// --- SUGGESTIONS FOR TILE DIMENSIONS ---
+const TILE_DIMENSIONS_SUGGESTIONS = [
+  "10cm x 10cm",
+  "15cm x 15cm",
+  "20cm x 20cm",
+  "20cm x 30cm",
+  "25cm x 25cm",
+  "30cm x 30cm",
+  "30cm x 60cm",
+  "33cm x 33cm",
+  "40cm x 40cm",
+  "45cm x 45cm",
+  "50cm x 50cm",
+  "60cm x 60cm",
+  "60cm x 120cm",
+  "75cm x 75cm",
+  "80cm x 80cm",
+  "90cm x 90cm",
+  "100cm x 100cm",
+  "120cm x 120cm",
+  "120cm x 240cm",
+  "120cm x 270cm",
+  "160cm x 320cm",
+];
+
+// --- AUTOCOMPLETE HOOKS ---
+function useProductNameAutocomplete(itemsLength: number) {
+  const [focusedProductIndex, setFocusedProductIndex] = useState<number | null>(null);
+  const [productNameInputs, setProductNameInputs] = useState<{ [index: number]: string }>({});
+  // Reset productNameInputs if item count changes (optional, to clear removed items)
+  React.useEffect(() => {
+    setProductNameInputs((prev) => {
+      // Remove keys not in current items
+      const newInputs: typeof prev = {};
+      for (let i = 0; i < itemsLength; i++) newInputs[i] = prev[i] || "";
+      return newInputs;
+    });
+  }, [itemsLength]);
+  return {
+    focusedProductIndex,
+    setFocusedProductIndex,
+    productNameInputs,
+    setProductNameInputs,
+  };
+}
+
+function getProductNameSuggestions(input: string) {
+  if (!input) return [];
+  const lower = input.toLowerCase();
+  return TILE_DIMENSIONS_SUGGESTIONS.filter((s) => s.toLowerCase().includes(lower));
+}
+
 function getItemError(
   errors: FieldErrors<ExternalSaleFormValues> | undefined,
   index: number,
@@ -85,6 +137,7 @@ export default function ExternalSaleDialog({
     formState: { errors },
     setValue,
     watch,
+    reset,
   } = useForm<ExternalSaleFormValues>({
     resolver: zodResolver(externalSaleFormSchema),
     defaultValues: defaultFormValues,
@@ -105,6 +158,41 @@ export default function ExternalSaleDialog({
       sum + ((Number(item?.quantity) || 0) * (Number(item?.unit_sale_price) || 0)),
     0
   );
+
+  // --- AUTOCOMPLETE STATE ---
+  const {
+    focusedProductIndex,
+    setFocusedProductIndex,
+    productNameInputs,
+    setProductNameInputs,
+  } = useProductNameAutocomplete(fields.length);
+
+  // --- HANDLERS FOR AUTOCOMPLETE ---
+  const handleProductNameChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setProductNameInputs((prev) => ({ ...prev, [index]: value }));
+    setValue(`items.${index}.product_name`, value, { shouldValidate: true });
+  };
+
+  const handleSuggestionClick = (index: number, suggestion: string) => {
+    setProductNameInputs((prev) => ({ ...prev, [index]: suggestion }));
+    setValue(`items.${index}.product_name`, suggestion, { shouldValidate: true });
+    setFocusedProductIndex(null);
+  };
+
+  const handleSuggestionBlur = () => {
+    setTimeout(() => setFocusedProductIndex(null), 100);
+  };
+
+  // --- RESET FORM WHEN CLOSED ---
+  useEffect(() => {
+    if (!open) {
+      // Reset form fields and autocomplete input state when dialog closes
+      reset(defaultFormValues);
+      setProductNameInputs({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -192,13 +280,35 @@ export default function ExternalSaleDialog({
                   >
                     {/* Main row: Name, Category, Unit, Qty, Sale Price, Remove */}
                     <div className="grid grid-cols-1 md:grid-cols-[2.3fr_1.8fr_1.1fr_1fr_1fr_40px] gap-4 items-end">
-                      <div>
+                      <div className="relative">
                         <Label className="block mb-1">Name / Reference</Label>
                         <Input
-                          {...register(`items.${index}.product_name` as const)}
+                          value={
+                            productNameInputs[index] ??
+                            watchedItem.product_name ??
+                            ""
+                          }
+                          onChange={(e) => handleProductNameChange(index, e)}
+                          onFocus={() => setFocusedProductIndex(index)}
+                          onBlur={handleSuggestionBlur}
                           className="h-10"
                           disabled={isProcessing}
+                          autoComplete="off"
                         />
+                        {focusedProductIndex === index &&
+                          getProductNameSuggestions(productNameInputs[index] ?? watchedItem.product_name ?? "").length > 0 && (
+                            <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-300 shadow rounded mt-1 max-h-40 overflow-auto text-sm">
+                              {getProductNameSuggestions(productNameInputs[index] ?? watchedItem.product_name ?? "").map((sugg) => (
+                                <li
+                                  key={sugg}
+                                  className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                                  onMouseDown={() => handleSuggestionClick(index, sugg)}
+                                >
+                                  {sugg}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         {getItemError(errors, index, "product_name") && (
                           <span className="text-red-500 text-xs">
                             {getItemError(errors, index, "product_name")?.message?.toString()}
@@ -410,4 +520,4 @@ export default function ExternalSaleDialog({
       </DialogContent>
     </Dialog>
   );
-}
+} 

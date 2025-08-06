@@ -1,9 +1,8 @@
-// src/app/dashboard/branches/page.tsx
-// Ensure this file is located at: src/app/dashboard/branches/page.tsx
+"use client";
 
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import React from 'react';
+import React, { useEffect, useState, useCallback } from "react";
+import { supabaseClient } from "@/lib/supabase/client";
+import { redirect } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -12,45 +11,67 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import BranchManagementActions from './branch-management-actions'; 
+import BranchManagementActions from "./branch-management-actions";
 
-export default async function BranchManagementPage() {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+type BranchType = {
+  id: string;
+  name: string;
+  location: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
-  if (!user) {
-    redirect('/');
-  }
+export default function BranchManagementPage() {
+  const [branches, setBranches] = useState<BranchType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Fetch current user's role to enforce admin access on server-side
-  const { data: currentUserProfile, error: profileError } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single();
+  const fetchBranches = useCallback(async () => {
+    setLoading(true);
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) {
+      redirect("/");
+      return;
+    }
+    const { data: currentUserProfile, error: profileFetchError } = await supabaseClient
+      .from("users")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-  if (profileError || currentUserProfile?.role !== 'admin') {
-    console.error("Access Denied: Non-admin trying to access Branch Management or profile fetch failed.");
-    redirect('/dashboard/overview'); // Redirect to overview for unauthorized access
-  }
+    if (profileFetchError || currentUserProfile?.role !== "admin") {
+      setProfileError("Access Denied: Non-admin trying to access Branch Management or profile fetch failed.");
+      redirect("/dashboard/overview");
+      return;
+    }
 
-  // Fetch all branches for display
-  const { data: branches, error: branchesError } = await supabase
-    .from('branches')
-    .select('id, name, location, created_at, updated_at');
+    const { data: branchesData, error: branchesError } = await supabaseClient
+      .from("branches")
+      .select("id, name, location, created_at, updated_at");
 
-  if (branchesError) {
-    console.error("Error fetching branches:", branchesError.message);
-    return <p className="text-red-500">Error loading branches: {branchesError.message}</p>;
+    if (branchesError) {
+      setProfileError("Error loading branches: " + branchesError.message);
+      setBranches([]);
+    } else {
+      setBranches(branchesData || []);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchBranches();
+  }, [fetchBranches]);
+
+  if (profileError) {
+    return <p className="text-red-500">{profileError}</p>;
   }
 
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Branch Management</h1>
-        <BranchManagementActions />
+        <BranchManagementActions onBranchChanged={fetchBranches} />
       </div>
-
       <div className="bg-white rounded-lg shadow-md p-6">
         <Table>
           <TableHeader>
@@ -59,19 +80,25 @@ export default async function BranchManagementPage() {
               <TableHead>Location</TableHead>
               <TableHead>Created At</TableHead>
               <TableHead>Updated At</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[100px] text-center">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {branches && branches.length > 0 ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center">
+                  Loading branches...
+                </TableCell>
+              </TableRow>
+            ) : branches && branches.length > 0 ? (
               branches.map((branch) => (
                 <TableRow key={branch.id}>
                   <TableCell className="font-medium">{branch.name}</TableCell>
-                  <TableCell>{branch.location || 'N/A'}</TableCell>
+                  <TableCell>{branch.location || "N/A"}</TableCell>
                   <TableCell>{new Date(branch.created_at).toLocaleString()}</TableCell>
                   <TableCell>{new Date(branch.updated_at).toLocaleString()}</TableCell>
-                  <TableCell className="text-right">
-                    <BranchManagementActions branchToEdit={branch} />
+                  <TableCell className="flex justify-center items-center h-[57px]">
+                    <BranchManagementActions branchToEdit={branch} onBranchChanged={fetchBranches} />
                   </TableCell>
                 </TableRow>
               ))
@@ -85,6 +112,6 @@ export default async function BranchManagementPage() {
           </TableBody>
         </Table>
       </div>
-    </div>
+    </div> 
   );
-}
+} 

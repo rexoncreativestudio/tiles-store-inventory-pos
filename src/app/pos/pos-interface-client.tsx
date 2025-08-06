@@ -174,10 +174,12 @@ export default function PosInterfaceClient({
 
   const handleAddToCartSubmit = ({
     qty,
+    salePrice,
     selectedWarehouses,
     note,
   }: {
     qty: number;
+    salePrice: number;
     selectedWarehouses: { id: string; name: string; deducted: number }[];
     note: string;
   }) => {
@@ -194,8 +196,8 @@ export default function PosInterfaceClient({
       name: selectedProduct.name,
       unique_reference: selectedProduct.unique_reference,
       quantity: qty,
-      unit_sale_price: selectedProduct.sale_price,
-      total_line_price: qty * selectedProduct.sale_price,
+      unit_sale_price: salePrice,
+      total_line_price: qty * salePrice,
       note,
       image_url: selectedProduct.image_url,
       warehouse_selections: warehouseSelections,
@@ -396,6 +398,21 @@ export default function PosInterfaceClient({
     toast.success("Page refreshed!");
   };
 
+  // --- Date/Time State ---
+  const [currentDateTime, setCurrentDateTime] = useState(() =>
+    new Date().toLocaleString("en-GB", { hour12: false })
+  );
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDateTime(new Date().toLocaleString("en-GB", { hour12: false }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // --- Branch Name ---
+  const currentBranch =
+    branches.find((b) => b.id === currentUserBranchId)?.name || "Unknown Branch";
+
   // --- Render ---
   return (
     <div className="flex flex-col h-screen">
@@ -430,6 +447,8 @@ export default function PosInterfaceClient({
             <Calculator className="mr-1 h-5 w-5" />
             Calculator
           </Button>
+          {/* Date/Time */}
+          <span className="ml-4 font-mono text-gray-700 text-sm">{currentDateTime}</span>
         </div>
         {/* Center: Logo ONLY */}
         <div className="absolute left-1/2 top-1/2 flex flex-col items-center -translate-x-1/2 -translate-y-1/2">
@@ -443,8 +462,13 @@ export default function PosInterfaceClient({
             priority
           />
         </div>
-        {/* Right: Refresh & Logout */}
+        {/* Right: Branch Name, Refresh & Logout */}
         <div className="flex gap-2 items-center ml-auto">
+          {/* Branch Name */}
+          <div className="px-3 py-1 rounded bg-gray-100 text-gray-700 font-semibold text-sm">
+            {currentBranch}
+          </div>
+          {/* Refresh Button: icon only */}
           <Button
             variant="outline"
             onClick={handleManualRefresh}
@@ -452,7 +476,6 @@ export default function PosInterfaceClient({
             className="flex gap-2 items-center"
           >
             <RefreshCw className="h-5 w-5" />
-            Refresh
           </Button>
           <Button
             variant="destructive"
@@ -630,11 +653,13 @@ export default function PosInterfaceClient({
           if (!open) setSelectedProduct(null);
         }}
         productName={selectedProduct?.name || ""}
+        salePrice={selectedProduct?.sale_price ?? 0}
+        userRole={currentUserRole}
         warehouses={warehouseOptions}
         initialQty={1}
         onSubmit={handleAddToCartSubmit}
       />
-      {/* Payment Dialog (EXTRACTED TO COMPONENT) */}
+      {/* Payment Dialog */}
       <PosInterfaceClientPaymentDialog
         isOpen={isPaymentDialogOpen}
         onOpenChange={setIsPaymentDialogOpen}
@@ -674,5 +699,5 @@ export default function PosInterfaceClient({
         currentUserRole={currentUserRole}
       />
     </div>
-  ); 
-}
+  );
+} 

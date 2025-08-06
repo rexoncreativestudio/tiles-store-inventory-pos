@@ -29,25 +29,64 @@ interface AddToCartDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   productName: string;
+  salePrice: number;
+  userRole?: string;
   warehouses: WarehouseOption[];
   initialQty?: number;
   initialNote?: string;
-  onSubmit: (data: { qty: number; selectedWarehouses: WarehouseDeduction[]; note: string }) => void;
+  initialSalePrice?: number;
+  onSubmit: (data: { qty: number; salePrice: number; selectedWarehouses: WarehouseDeduction[]; note: string }) => void;
 }
 
 const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   open,
   onOpenChange,
   productName,
+  salePrice,
+  userRole = "",
   warehouses,
   initialQty = 1,
   initialNote = "",
+  initialSalePrice,
   onSubmit,
 }) => {
-  // Change initialQty default to empty string, allow user to input
+  // Sale price editing
+  const [salePriceInput, setSalePriceInput] = useState<string>(
+    initialSalePrice !== undefined ? String(initialSalePrice) : String(salePrice)
+  );
+  const [salePriceError, setSalePriceError] = useState<string>("");
+
+  // Quantity and warehouse logic
   const [qty, setQty] = useState<string>(initialQty ? String(initialQty) : "");
   const [warehouseSelections, setWarehouseSelections] = useState<WarehouseDeduction[]>([]);
   const [note, setNote] = useState<string>(initialNote);
+
+  // Reset fields when dialog is opened
+  useEffect(() => {
+    if (open) {
+      setQty(initialQty ? String(initialQty) : "");
+      setSalePriceInput(
+        initialSalePrice !== undefined ? String(initialSalePrice) : String(salePrice)
+      );
+      setSalePriceError("");
+      setNote(initialNote || "");
+    }
+  }, [open, initialQty, initialSalePrice, salePrice, initialNote]);
+
+  // Sale price validation for cashier
+  useEffect(() => {
+    const priceNum = parseFloat(salePriceInput);
+    if (
+      userRole.toLowerCase() === "cashier" &&
+      priceNum < salePrice
+    ) {
+      setSalePriceError(
+        `Cashiers cannot set a sale price below the registered sale price (${salePrice}).`
+      );
+    } else {
+      setSalePriceError("");
+    }
+  }, [salePriceInput, salePrice, userRole]);
 
   useEffect(() => {
     // Only run selections if qty is a valid positive number
@@ -71,6 +110,10 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
 
   const handleQtyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQty(e.target.value);
+  };
+
+  const handleSalePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSalePriceInput(e.target.value);
   };
 
   const handleWarehouseCheckbox = (id: string) => {
@@ -107,8 +150,16 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   };
 
   const numericQty = parseInt(qty, 10);
+  const salePriceNum = parseFloat(salePriceInput);
   const totalSelected = warehouseSelections.reduce((s, w) => s + w.deducted, 0);
-  const canSubmit = !!numericQty && numericQty > 0 && totalSelected === numericQty && warehouseSelections.length > 0;
+  const canSubmit =
+    !!numericQty &&
+    numericQty > 0 &&
+    totalSelected === numericQty &&
+    warehouseSelections.length > 0 &&
+    !!salePriceInput &&
+    !salePriceError &&
+    salePriceNum >= 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +167,7 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
     if (canSubmit) {
       onSubmit({
         qty: numericQty,
+        salePrice: salePriceNum,
         selectedWarehouses: filtered,
         note,
       });
@@ -128,10 +180,21 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">Add Item to Cart</DialogTitle>
           <DialogDescription className="text-base text-muted-foreground mb-4">
-            Enter quantity, select warehouses, and add an optional note.
+            Enter quantity, sale price, select warehouses, and add an optional note.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-6 py-2">
+          {/* Product */}
+          <div>
+            <Label className="mb-2 block text-base font-semibold">Product</Label>
+            <Input
+              value={productName}
+              onChange={() => {}}
+              className="h-12 text-base"
+              disabled
+            />
+          </div>
+          {/* Quantity */}
           <div>
             <Label htmlFor="qty" className="mb-2 block text-base font-semibold">
               Quantity
@@ -147,15 +210,28 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
               placeholder="Enter quantity"
             />
           </div>
+          {/* Sale Price */}
           <div>
-            <Label className="mb-2 block text-base font-semibold">Product</Label>
+            <Label htmlFor="saleprice" className="mb-2 block text-base font-semibold">
+              Sale Price
+            </Label>
             <Input
-              value={productName}
-              onChange={() => {}}
-              className="h-12 text-base"
-              disabled
+              id="saleprice"
+              type="number"
+              min={0}
+              step="0.01"
+              value={salePriceInput}
+              onChange={handleSalePriceChange}
+              className={`h-12 text-base ${salePriceError ? "border-red-400" : ""}`}
+              placeholder={`Registered price: ${salePrice}`}
             />
+            {salePriceError && (
+              <div className="text-xs text-red-600 mt-1">
+                {salePriceError}
+              </div>
+            )}
           </div>
+          {/* Warehouses */}
           <div>
             <Label className="mb-2 block text-base font-semibold">Warehouses</Label>
             <div className="flex flex-col gap-2">
@@ -208,6 +284,7 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
               </div>
             )}
           </div>
+          {/* Notes */}
           <div>
             <Label htmlFor="note" className="mb-2 block text-base font-semibold">
               Note (Optional)
@@ -231,8 +308,8 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
           </DialogFooter>
         </form>
       </DialogContent>
-    </Dialog> 
+    </Dialog>
   );
 };
 
-export default AddToCartDialog;
+export default AddToCartDialog; 

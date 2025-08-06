@@ -543,9 +543,7 @@ export default function RecentSalesModalClient({
                       <TableHead>Qty</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Unit Price</TableHead>
-                      {selectedSaleDetails.saleType === "External Sale" && (
-                        <TableHead className="text-right">Purchase Price</TableHead>
-                      )}
+                      {/* Purchase Price removed for External Sale */}
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead>Note</TableHead>
                     </TableRow>
@@ -567,16 +565,15 @@ export default function RecentSalesModalClient({
                               'N/A'}
                           </TableCell>
                           <TableCell className="text-right">{formatCurrency(item.unit_sale_price)}</TableCell>
-                          {selectedSaleDetails.saleType === "External Sale" && (
-                            <TableCell className="text-right">{formatCurrency(item.unit_purchase_price_negotiated ?? 0)}</TableCell>
-                          )}
+                          {/* Purchase Price cell removed */}
                           <TableCell className="text-right">{formatCurrency(item.total_price)}</TableCell>
                           <TableCell>{item.note || 'N/A'}</TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={selectedSaleDetails.saleType === "External Sale" ? 7 : 6} className="h-16 text-center">No items found for this sale.</TableCell>
+                        {/* Maintain colSpan for table structure */}
+                        <TableCell colSpan={6} className="h-16 text-center">No items found for this sale.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
