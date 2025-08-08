@@ -5,22 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCurrencyFormatter } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   XCircle, Search, Loader2, ReceiptText, RefreshCw, LogOut, History, Calculator,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, SubmitHandler } from "react-hook-form";
 import {
   Table,
   TableBody,
@@ -33,6 +21,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { supabaseClient } from "@/lib/supabase/client";
+
+// Import useForm and SubmitHandler from react-hook-form
+import { useForm, SubmitHandler } from "react-hook-form";
+// Import zodResolver from @hookform/resolvers/zod
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import {
   CategoryForPos,
@@ -55,11 +48,15 @@ import TilesCalculatorDialog from './components/tiles-calculator-dialog';
 import ExternalSaleDialog from './components/external-sale-dialog';
 import AddToCartDialog, { WarehouseDeduction } from './components/add-to-cart-dialog';
 
+// Payment Dialog import (corrected props)
+import PosInterfaceClientPaymentDialog from './components/pos-interface-client-payment-dialog';
+
 type PaymentFormValues = {
   amountReceived: number;
   customerName?: string;
   customerPhone?: string;
   status: "completed" | "held";
+  date?: string;
 };
 
 interface PosInterfaceClientProps {
@@ -121,7 +118,7 @@ export default function PosInterfaceClient({
   }, [initialDetailedStock]);
 
   const paymentForm = useForm<PaymentFormValues>({
-    defaultValues: { amountReceived: 0, customerName: "", customerPhone: "", status: "completed" },
+    defaultValues: { amountReceived: 0, customerName: "", customerPhone: "", status: "completed", date: new Date().toISOString().split("T")[0] },
   });
 
   const externalSaleForm = useForm({
@@ -246,7 +243,7 @@ export default function PosInterfaceClient({
       return;
     }
     setIsPaymentDialogOpen(true);
-    paymentForm.reset({ amountReceived: grandTotal, customerName: "", customerPhone: "", status: "completed" });
+    paymentForm.reset({ amountReceived: grandTotal, customerName: "", customerPhone: "", status: "completed", date: new Date().toISOString().split("T")[0] });
   };
 
   const onPaymentFormSubmit: SubmitHandler<PaymentFormValues> = async (values) => {
@@ -297,7 +294,7 @@ export default function PosInterfaceClient({
       const { data: rpcResponseData, error: funcError } = await supabaseClient
         .rpc("process_sale_transaction", {
           sale_data: {
-            sale_date: new Date().toISOString(),
+            sale_date: values.date ? new Date(values.date).toISOString() : new Date().toISOString(),
             cashier_id: currentCashierId,
             branch_id: cashierBranchId,
             customer_name: values.customerName || "Walk-in Customer",
@@ -464,7 +461,7 @@ export default function PosInterfaceClient({
             Calculator
           </Button>
         </div>
-        
+
         {/* Right group: Refresh, Logout */}
         <div className="flex gap-2 items-center">
           <Button
@@ -659,116 +656,16 @@ export default function PosInterfaceClient({
         onSubmit={handleAddToCartSubmit}
       />
 
-      {/* Payment Dialog */}
-      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">Process Payment</DialogTitle>
-            <DialogDescription className="text-base text-muted-foreground mb-4">
-              Finalize the sale and calculate change.
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={paymentForm.handleSubmit(onPaymentFormSubmit)}
-            className="flex flex-col gap-6 py-2"
-          >
-            <div>
-              <Label htmlFor="amountReceived" className="mb-2 block text-base font-semibold">Amount Received</Label>
-              <Input
-                id="amountReceived"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                max="9999999.99"
-                className="h-12 text-base"
-                placeholder="0.00"
-                {...paymentForm.register("amountReceived", {
-                  valueAsNumber: true,
-                  required: true,
-                  validate: (val) =>
-                    val !== undefined &&
-                    !isNaN(val) &&
-                    /^\d+(\.\d{1,2})?$/.test(val.toString()) ||
-                    "Amount must be a number with up to 2 decimal places",
-                })}
-                onWheel={e => (e.target as HTMLInputElement).blur()}
-              />
-              {paymentForm.formState.errors.amountReceived && (
-                <span className="text-red-500 text-xs mt-1 block">
-                  {paymentForm.formState.errors.amountReceived.message}
-                </span>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="customerName" className="mb-2 block text-base font-semibold">Customer Name (Optional)</Label>
-              <Input
-                id="customerName"
-                className="h-12 text-base"
-                {...paymentForm.register("customerName")}
-              />
-            </div>
-            <div>
-              <Label htmlFor="customerPhone" className="mb-2 block text-base font-semibold">Customer Phone (Optional)</Label>
-              <Input
-                id="customerPhone"
-                className="h-12 text-base"
-                {...paymentForm.register("customerPhone")}
-              />
-            </div>
-            <div>
-              <Label className="mb-2 block text-base font-semibold">Status</Label>
-              <div className="flex flex-row gap-6">
-                <label className={cn(`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors`,
-                  paymentForm.watch("status") === "completed" ? "bg-green-50 border-green-400 shadow-sm" : "hover:bg-green-100 border-green-200"
-                )}>
-                  <input
-                    type="radio"
-                    {...paymentForm.register("status")}
-                    value="completed"
-                    checked={paymentForm.watch("status") === "completed"}
-                    className="accent-green-600 w-5 h-5 rounded"
-                    style={{ accentColor: "#16a34a" }}
-                  />
-                  <span className="text-green-700 font-medium">Completed</span>
-                </label>
-                <label className={cn(`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors`,
-                  paymentForm.watch("status") === "held" ? "bg-gray-100 border-gray-400 shadow-sm" : "hover:bg-gray-200 border-gray-200"
-                )}>
-                  <input
-                    type="radio"
-                    {...paymentForm.register("status")}
-                    value="held"
-                    checked={paymentForm.watch("status") === "held"}
-                    className="accent-gray-400 w-5 h-5 rounded"
-                    style={{ accentColor: "#d1d5db" }}
-                  />
-                  <span className="text-gray-700 font-medium">Held</span>
-                </label>
-              </div>
-            </div>
-            <div className="flex justify-between items-center text-lg font-semibold mt-2">
-              <span>Change Due:</span>
-              <span>
-                {formatCurrency((paymentForm.watch("amountReceived") || 0) - grandTotal)}
-              </span>
-            </div>
-            <DialogFooter className="mt-4">
-              <Button
-                type="submit"
-                className="w-full h-12 text-lg font-semibold"
-                disabled={isProcessingSale}
-              >
-                {isProcessingSale ? (
-                  <Loader2 className="animate-spin mr-2" />
-                ) : (
-                  "Confirm Payment"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Payment Dialog - corrected props (isOpen, onOpenChange, onSubmit, isProcessing, grandTotal, formatCurrency, form) */}
+      <PosInterfaceClientPaymentDialog
+        isOpen={isPaymentDialogOpen}
+        onOpenChange={setIsPaymentDialogOpen}
+        onSubmit={onPaymentFormSubmit}
+        isProcessing={isProcessingSale}
+        grandTotal={grandTotal}
+        formatCurrency={formatCurrency}
+        form={paymentForm}
+      />
 
       {/* External Sale Dialog */}
       <ExternalSaleDialog
@@ -804,4 +701,4 @@ export default function PosInterfaceClient({
       />
     </div>
   );
-} 
+}   

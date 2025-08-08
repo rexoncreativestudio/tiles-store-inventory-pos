@@ -1,29 +1,19 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import React, { useEffect } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, CalendarIcon } from "lucide-react";
-import { useForm, SubmitHandler } from "react-hook-form";
-import { format } from "date-fns";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import { Loader2 } from "lucide-react";
+import { UseFormReturn, SubmitHandler } from "react-hook-form";
 
 type PaymentFormValues = {
   amountReceived: number;
   customerName?: string;
   customerPhone?: string;
   status: "completed" | "held";
-  date?: Date;
+  date?: string; // <-- Added date field
 };
 
 interface PaymentDialogModalProps {
@@ -33,6 +23,7 @@ interface PaymentDialogModalProps {
   isProcessing: boolean;
   grandTotal: number;
   formatCurrency: (amount: number) => string;
+  form: UseFormReturn<PaymentFormValues>;
 }
 
 export default function PosInterfaceClientPaymentDialog({
@@ -41,46 +32,12 @@ export default function PosInterfaceClientPaymentDialog({
   onSubmit,
   isProcessing,
   grandTotal,
-  formatCurrency: _formatCurrency,
+  formatCurrency: _formatCurrency, // <-- Prefix with underscore to fix ESLint
+  form,
 }: PaymentDialogModalProps) {
-  // Memoize default values for useForm stability
-  const defaultFormValues: PaymentFormValues = useMemo(() => ({
-    amountReceived: grandTotal,
-    customerName: "",
-    customerPhone: "",
-    status: "completed",
-    date: new Date(),
-  }), [grandTotal]);
-
-  const form = useForm<PaymentFormValues>({
-    defaultValues: defaultFormValues,
-  });
-
   const amountReceived = form.watch("amountReceived");
   const status = form.watch("status");
-  const dateValue = form.watch("date");
 
-  // Reset form when dialog opens or grandTotal changes
-  useEffect(() => {
-    if (isOpen) {
-      form.reset({
-        amountReceived: grandTotal,
-        customerName: "",
-        customerPhone: "",
-        status: "completed",
-        date: new Date(),
-      });
-    }
-  }, [isOpen, grandTotal, form]);
-
-  // Set default date when dialog opens
-  useEffect(() => {
-    if (isOpen && !dateValue) {
-      form.setValue("date", new Date(), { shouldValidate: true, shouldDirty: true });
-    }
-  }, [isOpen, dateValue, form]);
-
-  // If amountReceived is less than grandTotal, set status to "held"
   useEffect(() => {
     if ((amountReceived || 0) < grandTotal) {
       if (status !== "held") {
@@ -102,40 +59,6 @@ export default function PosInterfaceClientPaymentDialog({
           onSubmit={form.handleSubmit(onSubmit)}
           className="grid gap-6 py-2"
         >
-          {/* --- Date Field --- */}
-          <div>
-            <Label htmlFor="paymentDate" className="mb-2 block text-base font-semibold">
-              Payment Date
-            </Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={`w-full h-12 text-base font-normal flex items-center justify-between`}
-                  type="button"
-                >
-                  {dateValue
-                    ? format(dateValue, "dd/MM/yyyy")
-                    : <span className="text-muted-foreground">Pick a date</span>
-                  }
-                  <CalendarIcon className="ml-2 h-5 w-5 text-muted-foreground" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="p-0">
-                <Calendar
-                  mode="single"
-                  selected={dateValue}
-                  onSelect={(date) => form.setValue("date", date, { shouldValidate: true, shouldDirty: true })}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            {form.formState.errors.date && (
-              <span className="text-red-500 text-xs mt-1 block">
-                {form.formState.errors.date.message}
-              </span>
-            )}
-          </div>
           <div>
             <Label htmlFor="amountReceived" className="mb-2 block text-base font-semibold">
               Amount Received
@@ -166,6 +89,24 @@ export default function PosInterfaceClientPaymentDialog({
               </span>
             )}
           </div>
+          {/* --- Date Field: Inserted after Amount Received --- */}
+          <div>
+            <Label htmlFor="date" className="mb-2 block text-base font-semibold">
+              Payment Date
+            </Label>
+            <Input
+              id="date"
+              type="date"
+              className="h-12 text-base"
+              {...form.register("date", { required: true })}
+            />
+            {form.formState.errors.date && (
+              <span className="text-red-500 text-xs mt-1 block">
+                {form.formState.errors.date.message || "Date is required"}
+              </span>
+            )}
+          </div>
+          {/* --- End Date Field --- */}
           <div>
             <Label htmlFor="customerName" className="mb-2 block text-base font-semibold">
               Customer Name (Optional)
@@ -240,4 +181,4 @@ export default function PosInterfaceClientPaymentDialog({
       </DialogContent>
     </Dialog>
   );
-} 
+}

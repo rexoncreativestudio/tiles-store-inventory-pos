@@ -12,10 +12,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
+
 
 export interface WarehouseOption {
   id: string;
@@ -39,13 +36,11 @@ interface AddToCartDialogProps {
   initialQty?: number;
   initialNote?: string;
   initialSalePrice?: number;
-  initialSaleDate?: Date;
   onSubmit: (data: {
     qty: number;
     salePrice: number;
     selectedWarehouses: WarehouseDeduction[];
     note: string;
-    saleDate: Date;
   }) => void;
 }
 
@@ -59,7 +54,6 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   initialQty = 1,
   initialNote = "",
   initialSalePrice,
-  initialSaleDate,
   onSubmit,
 }) => {
   // Memoize initial values for stability
@@ -67,10 +61,6 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   const memoizedInitialSalePrice = useMemo(() => initialSalePrice, [initialSalePrice]);
   const memoizedSalePrice = useMemo(() => productSalePrice, [productSalePrice]);
   const memoizedInitialNote = useMemo(() => initialNote, [initialNote]);
-  const memoizedInitialSaleDate = useMemo(
-    () => initialSaleDate ?? new Date(),
-    [initialSaleDate]
-  );
 
   // Sale price editing
   const [salePriceInput, setSalePriceInput] = useState<string>(
@@ -83,13 +73,6 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   const [warehouseSelections, setWarehouseSelections] = useState<WarehouseDeduction[]>([]);
   const [note, setNote] = useState<string>(memoizedInitialNote);
 
-  // Sale date & time logic
-  const [saleDate, setSaleDate] = useState<Date>(memoizedInitialSaleDate);
-  // store time as string "HH:mm"
-  const [saleTime, setSaleTime] = useState<string>(
-    format(memoizedInitialSaleDate, "HH:mm")
-  );
-
   // Reset fields when dialog is opened or memoized props change
   useEffect(() => {
     if (open) {
@@ -99,10 +82,8 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
       );
       setSalePriceError("");
       setNote(memoizedInitialNote || "");
-      setSaleDate(memoizedInitialSaleDate);
-      setSaleTime(format(memoizedInitialSaleDate, "HH:mm"));
     }
-  }, [open, memoizedInitialQty, memoizedInitialSalePrice, memoizedSalePrice, memoizedInitialNote, memoizedInitialSaleDate]);
+  }, [open, memoizedInitialQty, memoizedInitialSalePrice, memoizedSalePrice, memoizedInitialNote]);
 
   useEffect(() => {
     const priceNum = parseFloat(salePriceInput);
@@ -179,25 +160,6 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
     );
   };
 
-  // --- Calendar handlers ---
-  const handleSaleDateChange = (date: Date | undefined) => {
-    if (date) {
-      // keep time from saleTime
-      const [hour, min] = saleTime.split(":");
-      date.setHours(Number(hour), Number(min), 0, 0);
-      setSaleDate(new Date(date));
-    }
-  };
-  const handleSaleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSaleTime(e.target.value);
-    if (saleDate) {
-      const [hour, min] = e.target.value.split(":");
-      let newDate = new Date(saleDate);
-      newDate.setHours(Number(hour), Number(min), 0, 0);
-      setSaleDate(newDate);
-    }
-  };
-
   const numericQty = parseInt(qty, 10);
   const salePriceNum = parseFloat(salePriceInput);
   const totalSelected = warehouseSelections.reduce((s, w) => s + w.deducted, 0);
@@ -208,9 +170,7 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
     warehouseSelections.length > 0 &&
     !!salePriceInput &&
     !salePriceError &&
-    salePriceNum >= 0 &&
-    saleDate instanceof Date &&
-    !isNaN(saleDate.getTime());
+    salePriceNum >= 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,7 +181,6 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
         salePrice: salePriceNum,
         selectedWarehouses: filtered,
         note,
-        saleDate,
       });
     }
   };
@@ -232,7 +191,7 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">Add Item to Cart</DialogTitle>
           <DialogDescription className="text-base text-muted-foreground mb-4">
-            Enter quantity, sale price, select warehouses, sale date, and an optional note.
+            Enter quantity, sale price, select warehouses, and an optional note.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-6 py-2">
@@ -282,41 +241,6 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
                 {salePriceError}
               </div>
             )}
-          </div>
-          {/* Sale Date (calendar + time input) */}
-          <div>
-            <Label htmlFor="sale-date" className="mb-2 block text-base font-semibold">
-              Sale Date
-            </Label>
-            <div className="flex gap-2 items-center">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal h-12",
-                      !saleDate && "text-muted-foreground"
-                    )}
-                  >
-                    {saleDate ? format(saleDate, "PPP") : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={saleDate}
-                    onSelect={handleSaleDateChange}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-              <Input
-                type="time"
-                value={saleTime}
-                onChange={handleSaleTimeChange}
-                className="h-12 w-[120px]"
-              />
-            </div>
           </div>
           {/* Warehouses */}
           <div>
@@ -399,4 +323,4 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   );
 };
 
-export default AddToCartDialog;      
+export default AddToCartDialog;  
