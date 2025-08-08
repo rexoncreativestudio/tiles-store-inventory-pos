@@ -114,11 +114,27 @@ export const externalSaleItemSchema = z.object({
 
 export type ExternalSaleItemValues = z.infer<typeof externalSaleItemSchema>;
 
+// --- EXTERNAL SALE FORM SCHEMA & TYPE WITH DATE FIELD ---
+// Fix: ensure date is always Date, never undefined
+
 export const externalSaleFormSchema = z.object({
   customerName: z.string().min(1, { message: "Customer name is required." }),
   customerPhone: z.string().optional(),
   items: z.array(externalSaleItemSchema),
   status: z.enum(["completed", "held"]),
+  date: z.preprocess(
+    (arg) => {
+      // Accept Date object or ISO string, convert to Date
+      let dt: Date | undefined;
+      if (typeof arg === "string" || typeof arg === "number") {
+        dt = new Date(arg);
+      } else if (arg instanceof Date) {
+        dt = arg;
+      }
+      return dt && !isNaN(dt.getTime()) ? dt : new Date();
+    },
+    z.date()
+  ),
 });
 
 export type ExternalSaleFormValues = z.infer<typeof externalSaleFormSchema>;

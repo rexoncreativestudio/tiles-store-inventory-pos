@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PlusCircle, XCircle } from "lucide-react";
+import { PlusCircle, XCircle, CalendarIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -22,6 +22,7 @@ import {
   useForm,
   useFieldArray,
   useWatch,
+  SubmitHandler,
   FieldErrors,
   FieldError,
 } from "react-hook-form";
@@ -33,6 +34,9 @@ import {
   ExternalSaleItemValues,
 } from "@/app/pos/types";
 import { useCurrencyFormatter } from "@/lib/formatters";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
 
 export interface ExternalSaleDialogProps {
   open: boolean;
@@ -45,26 +49,10 @@ export interface ExternalSaleDialogProps {
 
 // --- SUGGESTIONS FOR TILE DIMENSIONS ---
 const TILE_DIMENSIONS_SUGGESTIONS = [
-  "10cm x 10cm",
-  "15cm x 15cm",
-  "20cm x 20cm",
-  "20cm x 30cm",
-  "25cm x 25cm",
-  "30cm x 30cm",
-  "30cm x 60cm",
-  "33cm x 33cm",
-  "40cm x 40cm",
-  "45cm x 45cm",
-  "50cm x 50cm",
-  "60cm x 60cm",
-  "60cm x 120cm",
-  "75cm x 75cm",
-  "80cm x 80cm",
-  "90cm x 90cm",
-  "100cm x 100cm",
-  "120cm x 120cm",
-  "120cm x 240cm",
-  "120cm x 270cm",
+  "10cm x 10cm", "15cm x 15cm", "20cm x 20cm", "20cm x 30cm", "25cm x 25cm",
+  "30cm x 30cm", "30cm x 60cm", "33cm x 33cm", "40cm x 40cm", "45cm x 45cm",
+  "50cm x 50cm", "60cm x 60cm", "60cm x 120cm", "75cm x 75cm", "80cm x 80cm",
+  "90cm x 90cm", "100cm x 100cm", "120cm x 120cm", "120cm x 240cm", "120cm x 270cm",
   "160cm x 320cm",
 ];
 
@@ -72,15 +60,15 @@ const TILE_DIMENSIONS_SUGGESTIONS = [
 function useProductNameAutocomplete(itemsLength: number) {
   const [focusedProductIndex, setFocusedProductIndex] = useState<number | null>(null);
   const [productNameInputs, setProductNameInputs] = useState<{ [index: number]: string }>({});
-  // Reset productNameInputs if item count changes (optional, to clear removed items)
-  React.useEffect(() => {
+
+  useEffect(() => {
     setProductNameInputs((prev) => {
-      // Remove keys not in current items
       const newInputs: typeof prev = {};
       for (let i = 0; i < itemsLength; i++) newInputs[i] = prev[i] || "";
       return newInputs;
     });
   }, [itemsLength]);
+
   return {
     focusedProductIndex,
     setFocusedProductIndex,
@@ -106,8 +94,7 @@ function getItemError(
     Array.isArray(errors.items) &&
     errors.items[index] &&
     typeof errors.items[index] === "object" &&
-    errors.items[index] !== null &&
-    (errors.items[index] as Record<string, unknown>)[field]
+    errors.items[index] !== null
   ) {
     return (errors.items[index] as Record<string, FieldError | undefined>)[field];
   }
@@ -122,13 +109,36 @@ export default function ExternalSaleDialog({
   isProcessing,
   initialValues = {},
 }: ExternalSaleDialogProps) {
-  const defaultFormValues: ExternalSaleFormValues = {
-    customerName: "",
-    customerPhone: "",
-    items: [],
-    status: "completed",
-    ...initialValues,
-  };
+  // Stable initialValues via useRef (never in dependency)
+  const stableInitialValues = useRef<Partial<ExternalSaleFormValues>>(initialValues);
+  useEffect(() => {
+    stableInitialValues.current = initialValues;
+  }, [initialValues]);
+
+  // --- Fix: Avoid duplicate "date" property and ensure it's always present as a Date ---
+  const defaultFormValues = useMemo<ExternalSaleFormValues>(() => {
+    const base: ExternalSaleFormValues = {
+      customerName: "",
+      customerPhone: "",
+      items: [],
+      status: "completed",
+      date: new Date(),
+      ...stableInitialValues.current,
+    };
+
+    // Guarantee no duplicate "date" property; always a Date object
+    if (typeof base.date === "string") {
+      base.date = new Date(base.date);
+    }
+    if (!base.date || isNaN(new Date(base.date).getTime())) {
+      base.date = new Date();
+    }
+
+    return base;
+   
+  }, []); // <-- empty array, do not depend on stableInitialValues.current
+
+  const resolver = zodResolver(externalSaleFormSchema) as any;
 
   const {
     register,
@@ -136,10 +146,9 @@ export default function ExternalSaleDialog({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
     reset,
   } = useForm<ExternalSaleFormValues>({
-    resolver: zodResolver(externalSaleFormSchema),
+    resolver,
     defaultValues: defaultFormValues,
   });
 
@@ -150,7 +159,8 @@ export default function ExternalSaleDialog({
   });
 
   const watchedItems = useWatch({ control, name: "items" }) as ExternalSaleItemValues[];
-  const status = watch("status") as "completed" | "held";
+  const status = useWatch({ control, name: "status" }) as "completed" | "held";
+  const dateValue = useWatch({ control, name: "date" }) as Date;
   const { formatCurrency } = useCurrencyFormatter();
 
   const saleTotal = (watchedItems ?? []).reduce(
@@ -184,15 +194,27 @@ export default function ExternalSaleDialog({
     setTimeout(() => setFocusedProductIndex(null), 100);
   };
 
-  // --- RESET FORM WHEN CLOSED ---
+  // Only reset when dialog closes (open -> false)
+  const prevOpen = useRef(open);
   useEffect(() => {
-    if (!open) {
-      // Reset form fields and autocomplete input state when dialog closes
+    if (prevOpen.current && !open) {
       reset(defaultFormValues);
       setProductNameInputs({});
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    prevOpen.current = open;
+  }, [open, reset, defaultFormValues, setProductNameInputs]);
+
+  // Only set date if not set or invalid
+  useEffect(() => {
+    if (open && (!dateValue || isNaN(new Date(dateValue).getTime()))) {
+      setValue("date", new Date(), { shouldValidate: true });
+    }
+  }, [open, dateValue, setValue]);
+
+  // --- Submit Handler ---
+  const handleFormSubmit: SubmitHandler<ExternalSaleFormValues> = (values) => {
+    onSubmit(values);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -205,7 +227,7 @@ export default function ExternalSaleDialog({
             Enter external sale details. All fields are required unless marked optional.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-8">
           {/* Customer Info Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -221,7 +243,7 @@ export default function ExternalSaleDialog({
               />
               {errors.customerName && (
                 <span className="text-red-500 text-xs">
-                  {errors.customerName.message?.toString()}
+                  {errors.customerName.message}
                 </span>
               )}
             </div>
@@ -236,6 +258,42 @@ export default function ExternalSaleDialog({
                 disabled={isProcessing}
               />
             </div>
+          </div>
+
+          {/* --- Date field --- */}
+          <div>
+            <Label htmlFor="externalSaleDate" className="mb-2 block text-base font-semibold">
+              Sale Date
+            </Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={`w-full h-12 text-base font-normal flex items-center justify-between`}
+                  type="button"
+                  disabled={isProcessing}
+                >
+                  {dateValue
+                    ? format(dateValue, "dd/MM/yyyy")
+                    : <span className="text-muted-foreground">Pick a date</span>
+                  }
+                  <CalendarIcon className="ml-2 h-5 w-5 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="p-0">
+                <Calendar
+                  mode="single"
+                  selected={dateValue ?? new Date()}
+                  onSelect={(date) => date && setValue("date", date, { shouldValidate: true })}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            {errors.date && (
+              <span className="text-red-500 text-xs mt-1 block">
+                {errors.date.message}
+              </span>
+            )}
           </div>
 
           {/* Sale Items Section */}
@@ -275,7 +333,7 @@ export default function ExternalSaleDialog({
                 const itemTotal = qty * salePrice;
                 return (
                   <div
-                    key={item.tempId ?? item.fieldId ?? index}
+                    key={item.tempId ?? item.fieldId}
                     className="bg-white border border-muted rounded-xl p-4"
                   >
                     {/* Main row: Name, Category, Unit, Qty, Sale Price, Remove */}
@@ -311,7 +369,7 @@ export default function ExternalSaleDialog({
                           )}
                         {getItemError(errors, index, "product_name") && (
                           <span className="text-red-500 text-xs">
-                            {getItemError(errors, index, "product_name")?.message?.toString()}
+                            {getItemError(errors, index, "product_name")?.message}
                           </span>
                         )}
                       </div>
@@ -350,7 +408,7 @@ export default function ExternalSaleDialog({
                         </Select>
                         {getItemError(errors, index, "product_category_id") && (
                           <span className="text-red-500 text-xs">
-                            {getItemError(errors, index, "product_category_id")?.message?.toString()}
+                            {getItemError(errors, index, "product_category_id")?.message}
                           </span>
                         )}
                       </div>
@@ -376,7 +434,7 @@ export default function ExternalSaleDialog({
                         />
                         {getItemError(errors, index, "quantity") && (
                           <span className="text-red-500 text-xs">
-                            {getItemError(errors, index, "quantity")?.message?.toString()}
+                            {getItemError(errors, index, "quantity")?.message}
                           </span>
                         )}
                       </div>
@@ -394,7 +452,7 @@ export default function ExternalSaleDialog({
                         />
                         {getItemError(errors, index, "unit_sale_price") && (
                           <span className="text-red-500 text-xs">
-                            {getItemError(errors, index, "unit_sale_price")?.message?.toString()}
+                            {getItemError(errors, index, "unit_sale_price")?.message}
                           </span>
                         )}
                       </div>
@@ -520,4 +578,4 @@ export default function ExternalSaleDialog({
       </DialogContent>
     </Dialog>
   );
-} 
+}             

@@ -1,3 +1,5 @@
+export const runtime = 'nodejs';
+
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import PosInterfaceClient from './pos-interface-client';
@@ -256,4 +258,3 @@ export default async function PosPage() {
     />
   );
 }
- 

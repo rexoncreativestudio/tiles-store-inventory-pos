@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export interface WarehouseOption {
   id: string;
@@ -19,7 +23,7 @@ export interface WarehouseOption {
   quantity: number;
 }
 
-interface WarehouseDeduction {
+export interface WarehouseDeduction {
   id: string;
   name: string;
   deducted: number;
@@ -29,64 +33,90 @@ interface AddToCartDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   productName: string;
-  salePrice: number;
-  userRole?: string;
+  productSalePrice: number;
+  currentUserRole?: string;
   warehouses: WarehouseOption[];
   initialQty?: number;
   initialNote?: string;
   initialSalePrice?: number;
-  onSubmit: (data: { qty: number; salePrice: number; selectedWarehouses: WarehouseDeduction[]; note: string }) => void;
+  initialSaleDate?: Date;
+  onSubmit: (data: {
+    qty: number;
+    salePrice: number;
+    selectedWarehouses: WarehouseDeduction[];
+    note: string;
+    saleDate: Date;
+  }) => void;
 }
 
 const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   open,
   onOpenChange,
   productName,
-  salePrice,
-  userRole = "",
+  productSalePrice,
+  currentUserRole = "",
   warehouses,
   initialQty = 1,
   initialNote = "",
   initialSalePrice,
+  initialSaleDate,
   onSubmit,
 }) => {
+  // Memoize initial values for stability
+  const memoizedInitialQty = useMemo(() => initialQty, [initialQty]);
+  const memoizedInitialSalePrice = useMemo(() => initialSalePrice, [initialSalePrice]);
+  const memoizedSalePrice = useMemo(() => productSalePrice, [productSalePrice]);
+  const memoizedInitialNote = useMemo(() => initialNote, [initialNote]);
+  const memoizedInitialSaleDate = useMemo(
+    () => initialSaleDate ?? new Date(),
+    [initialSaleDate]
+  );
+
   // Sale price editing
   const [salePriceInput, setSalePriceInput] = useState<string>(
-    initialSalePrice !== undefined ? String(initialSalePrice) : String(salePrice)
+    memoizedInitialSalePrice !== undefined ? String(memoizedInitialSalePrice) : String(memoizedSalePrice)
   );
   const [salePriceError, setSalePriceError] = useState<string>("");
 
   // Quantity and warehouse logic
-  const [qty, setQty] = useState<string>(initialQty ? String(initialQty) : "");
+  const [qty, setQty] = useState<string>(memoizedInitialQty ? String(memoizedInitialQty) : "");
   const [warehouseSelections, setWarehouseSelections] = useState<WarehouseDeduction[]>([]);
-  const [note, setNote] = useState<string>(initialNote);
+  const [note, setNote] = useState<string>(memoizedInitialNote);
 
-  // Reset fields when dialog is opened
+  // Sale date & time logic
+  const [saleDate, setSaleDate] = useState<Date>(memoizedInitialSaleDate);
+  // store time as string "HH:mm"
+  const [saleTime, setSaleTime] = useState<string>(
+    format(memoizedInitialSaleDate, "HH:mm")
+  );
+
+  // Reset fields when dialog is opened or memoized props change
   useEffect(() => {
     if (open) {
-      setQty(initialQty ? String(initialQty) : "");
+      setQty(memoizedInitialQty ? String(memoizedInitialQty) : "");
       setSalePriceInput(
-        initialSalePrice !== undefined ? String(initialSalePrice) : String(salePrice)
+        memoizedInitialSalePrice !== undefined ? String(memoizedInitialSalePrice) : String(memoizedSalePrice)
       );
       setSalePriceError("");
-      setNote(initialNote || "");
+      setNote(memoizedInitialNote || "");
+      setSaleDate(memoizedInitialSaleDate);
+      setSaleTime(format(memoizedInitialSaleDate, "HH:mm"));
     }
-  }, [open, initialQty, initialSalePrice, salePrice, initialNote]);
+  }, [open, memoizedInitialQty, memoizedInitialSalePrice, memoizedSalePrice, memoizedInitialNote, memoizedInitialSaleDate]);
 
-  // Sale price validation for cashier
   useEffect(() => {
     const priceNum = parseFloat(salePriceInput);
     if (
-      userRole.toLowerCase() === "cashier" &&
-      priceNum < salePrice
+      currentUserRole.toLowerCase() === "cashier" &&
+      priceNum < memoizedSalePrice
     ) {
       setSalePriceError(
-        `Cashiers cannot set a sale price below the registered sale price (${salePrice}).`
+        `Cashiers cannot set a sale price below the registered sale price (${memoizedSalePrice}).`
       );
     } else {
       setSalePriceError("");
     }
-  }, [salePriceInput, salePrice, userRole]);
+  }, [salePriceInput, memoizedSalePrice, currentUserRole]);
 
   useEffect(() => {
     // Only run selections if qty is a valid positive number
@@ -149,6 +179,25 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
     );
   };
 
+  // --- Calendar handlers ---
+  const handleSaleDateChange = (date: Date | undefined) => {
+    if (date) {
+      // keep time from saleTime
+      const [hour, min] = saleTime.split(":");
+      date.setHours(Number(hour), Number(min), 0, 0);
+      setSaleDate(new Date(date));
+    }
+  };
+  const handleSaleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSaleTime(e.target.value);
+    if (saleDate) {
+      const [hour, min] = e.target.value.split(":");
+      let newDate = new Date(saleDate);
+      newDate.setHours(Number(hour), Number(min), 0, 0);
+      setSaleDate(newDate);
+    }
+  };
+
   const numericQty = parseInt(qty, 10);
   const salePriceNum = parseFloat(salePriceInput);
   const totalSelected = warehouseSelections.reduce((s, w) => s + w.deducted, 0);
@@ -159,7 +208,9 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
     warehouseSelections.length > 0 &&
     !!salePriceInput &&
     !salePriceError &&
-    salePriceNum >= 0;
+    salePriceNum >= 0 &&
+    saleDate instanceof Date &&
+    !isNaN(saleDate.getTime());
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +221,7 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
         salePrice: salePriceNum,
         selectedWarehouses: filtered,
         note,
+        saleDate,
       });
     }
   };
@@ -180,7 +232,7 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">Add Item to Cart</DialogTitle>
           <DialogDescription className="text-base text-muted-foreground mb-4">
-            Enter quantity, sale price, select warehouses, and add an optional note.
+            Enter quantity, sale price, select warehouses, sale date, and an optional note.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-6 py-2">
@@ -223,13 +275,48 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
               value={salePriceInput}
               onChange={handleSalePriceChange}
               className={`h-12 text-base ${salePriceError ? "border-red-400" : ""}`}
-              placeholder={`Registered price: ${salePrice}`}
+              placeholder={`Registered price: ${memoizedSalePrice}`}
             />
             {salePriceError && (
               <div className="text-xs text-red-600 mt-1">
                 {salePriceError}
               </div>
             )}
+          </div>
+          {/* Sale Date (calendar + time input) */}
+          <div>
+            <Label htmlFor="sale-date" className="mb-2 block text-base font-semibold">
+              Sale Date
+            </Label>
+            <div className="flex gap-2 items-center">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal h-12",
+                      !saleDate && "text-muted-foreground"
+                    )}
+                  >
+                    {saleDate ? format(saleDate, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={saleDate}
+                    onSelect={handleSaleDateChange}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <Input
+                type="time"
+                value={saleTime}
+                onChange={handleSaleTimeChange}
+                className="h-12 w-[120px]"
+              />
+            </div>
           </div>
           {/* Warehouses */}
           <div>
@@ -312,4 +399,4 @@ const AddToCartDialog: React.FC<AddToCartDialogProps> = ({
   );
 };
 
-export default AddToCartDialog; 
+export default AddToCartDialog;      

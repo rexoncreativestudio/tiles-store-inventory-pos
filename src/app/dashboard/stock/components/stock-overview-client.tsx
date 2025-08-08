@@ -59,7 +59,6 @@ interface StockOverviewClientProps {
 export default function StockOverviewClient({
   initialProducts,
   initialStockDetails,
-  initialCategories, // <-- Added this line so the prop is accepted
   initialWarehouses
 }: StockOverviewClientProps) {
   const [productSearchQuery, setProductSearchQuery] = useState('');
@@ -116,8 +115,8 @@ export default function StockOverviewClient({
       <div>
         {stocks
           .filter(sd => sd.quantity > 0)
-          .map((sd, i) => (
-            <div key={i}>
+          .map(sd => (
+            <div key={sd.warehouse_id}>
               {(sd.warehouses?.name || 'Unknown Warehouse')}: {sd.quantity}
             </div>
           ))}

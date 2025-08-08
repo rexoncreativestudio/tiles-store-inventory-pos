@@ -76,3 +76,16 @@ export type UserProfile = {
   email: string;
   role: string;
 };
+
+/* --- Stock Review Modal Types --- */
+export type StockReviewRow = {
+  product_id: string;
+  product_name: string;
+  product_ref: string;
+  warehouses: {
+    warehouse_id: string;
+    warehouse_name: string;
+    quantity: number;
+  }[];
+  total_stock: number;
+};

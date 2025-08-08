@@ -73,7 +73,8 @@ export default function ReceiptDisplayClient({ sale, businessSettings }: Receipt
 
   const formatDate = (dateString: string) => {
     const date = parseISO(dateString);
-    return format(date, 'yyyy-MM-dd HH:mm');
+    // Format as DD/MM/YYYY
+    return format(date, 'dd/MM/yyyy');
   };
   const totalItemCount = useMemo(() => sale.items.reduce((sum, item) => sum + item.quantity, 0), [sale.items]);
   const amountInWords = `${numberToWords(sale.total_amount)}`.replace(/^\w/, c => c.toUpperCase());
@@ -209,4 +210,4 @@ export default function ReceiptDisplayClient({ sale, businessSettings }: Receipt
       </div>
     </div>
   );
-} 
+}  

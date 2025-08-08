@@ -8,11 +8,19 @@ import {
   ProductCategory
 } from './types';
 
+// --- Type for stock rows for modal ---
+type RawStockRow = {
+  product_id: string;
+  product_name: string;
+  product_ref: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  quantity: number;
+};
+
 export default async function StockControllerPage({
-  // Changed the type of searchParams to `any` to resolve the build error.
-  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: any) { // Changed from `{ searchParams?: { ... } }` to `any`
+}: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -88,19 +96,38 @@ export default async function StockControllerPage({
     dateTo.setDate(dateTo.getDate() + 1);
     pendingAuditsQuery = pendingAuditsQuery.lt('submission_date', dateTo.toISOString().split('T')[0]);
   }
-  
-  // Note: Searching by a text 'query' on a related table (warehouses) or inside a JSONB column
-  // is more complex and may require a database function (RPC call) for efficiency.
-  // For this implementation, we will filter by warehouse name on the client side if needed,
-  // or you could implement an RPC call for server-side search.
 
   // Execute query and get data
   const { data: pendingAudits, count: totalAuditsCount } = await pendingAuditsQuery
     .range(offset, offset + itemsPerPage - 1)
     .returns<PendingAuditRecord[]>();
 
+  // --- FETCH STOCK DATA (for modal) ---
+  const { data: stockRows, error: stockRowsError } = await supabase
+    .from('stock')
+    .select(`
+      product_id,
+      products(id, name, unique_reference),
+      warehouse_id,
+      warehouses(id, name),
+      quantity
+    `);
+
+  if (stockRowsError) {
+    console.error("Error fetching stock info:", stockRowsError.message);
+  }
+
+  // Format for client
+  const formattedStockRows: RawStockRow[] = (stockRows || []).map((row: any) => ({
+    product_id: row.product_id,
+    product_name: row.products?.name || "",
+    product_ref: row.products?.unique_reference || "",
+    warehouse_id: row.warehouse_id,
+    warehouse_name: row.warehouses?.name || "",
+    quantity: row.quantity,
+  }));
+
   return (
-    // Removed padding from here, client component will handle it
     <div>
       <ControllerOverviewClient
         initialPendingAudits={pendingAudits || []}
@@ -110,7 +137,8 @@ export default async function StockControllerPage({
         warehouses={warehouses || []}
         allCategories={allCategories || []}
         recordedByUserId={currentUserId}
+        initialStockRows={formattedStockRows}
       />
     </div>
   );
-}  
+}    

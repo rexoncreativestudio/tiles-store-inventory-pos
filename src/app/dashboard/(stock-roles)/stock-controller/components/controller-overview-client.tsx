@@ -18,7 +18,20 @@ import { cn } from '@/lib/utils';
 import jsPDF from 'jspdf';
 
 import ControllerSubmissionForm from './controller-submission-form';
-import { PendingAuditRecord, WarehouseForController, ProductCategory } from '../types';
+import { PendingAuditRecord, WarehouseForController, ProductCategory, StockReviewRow } from '../types';
+import StockReviewModal from './stock-review-modal';
+import StockReviewFAB from './stock-review-fab';
+import { groupStockByProduct } from './stock-utils';
+
+// --- Type for raw stock data for grouping utility ---
+type RawStockRow = {
+  product_id: string;
+  product_name: string;
+  product_ref: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  quantity: number;
+};
 
 interface ControllerOverviewClientProps {
   initialPendingAudits: PendingAuditRecord[];
@@ -28,6 +41,7 @@ interface ControllerOverviewClientProps {
   warehouses: WarehouseForController[];
   allCategories: ProductCategory[];
   recordedByUserId: string;
+  initialStockRows?: RawStockRow[];
 }
 
 export default function ControllerOverviewClient({
@@ -38,11 +52,21 @@ export default function ControllerOverviewClient({
   warehouses,
   allCategories,
   recordedByUserId,
+  initialStockRows,
 }: ControllerOverviewClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Component state
+  // --- Stock Review Modal state ---
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+
+  // --- Memoized stock rows for modal (fixes exhaustive-deps warning) ---
+  const productStockRows: StockReviewRow[] = useMemo(
+    () => groupStockByProduct(initialStockRows || []),
+    [initialStockRows]
+  );
+
+  // --- Audits state ---
   const [pendingAudits, setPendingAudits] = useState(initialPendingAudits);
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false);
   const [isViewDetailsDialogOpen, setIsViewDetailsDialogOpen] = useState(false);
@@ -219,6 +243,16 @@ export default function ControllerOverviewClient({
 
   return (
     <div className="p-2 sm:p-4 lg:p-6 bg-gray-50 min-h-screen">
+      {/* --- Stock Review Modal and FAB --- */}
+      <StockReviewFAB onClick={() => setStockModalOpen(true)} />
+      <StockReviewModal
+        open={stockModalOpen}
+        onOpenChange={setStockModalOpen}
+        warehouses={warehouses}
+        stockData={productStockRows}
+      />
+      {/* --- END STOCK MODAL --- */}
+
       <ControllerSubmissionForm
         warehouses={warehouses}
         allCategories={allCategories}
@@ -543,4 +577,4 @@ export default function ControllerOverviewClient({
       </Dialog>
     </div>
   );
-} 
+}    

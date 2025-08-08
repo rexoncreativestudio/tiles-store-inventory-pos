@@ -5,17 +5,22 @@ import { useRouter } from "next/navigation";
 import { useCurrencyFormatter } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
-  XCircle,
-  Search,
-  Loader2,
-  Calculator,
-  RefreshCw,
-  LogOut,
-  History,
-  Receipt,
+  XCircle, Search, Loader2, ReceiptText, RefreshCw, LogOut, History, Calculator,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm, SubmitHandler } from "react-hook-form";
 import {
   Table,
   TableBody,
@@ -25,35 +30,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { supabaseClient } from "@/lib/supabase/client";
+
 import {
   CategoryForPos,
   ProductForPos,
   ProductStockDetail,
   CartItem,
+  externalSaleFormSchema,
   ExternalSaleFormValues,
   SaleRecordForRecentSales,
+  WarehouseSelection,
   ExpenseCategoryForPos,
   ExpenseRecordForPos,
   BranchForFilter,
 } from "./types";
-import RecentSalesModalClient from "./components/recent-sales-modal-client";
-import ProductCardClient from "./product-card-client";
-import TilesCalculatorDialog from "./components/tiles-calculator-dialog";
-import ExternalSaleDialog from "./components/external-sale-dialog";
-import ExpensesReviewModalClient from "./components/expenses-review-modal-client";
-import AddToCartDialog from "./components/add-to-cart-dialog";
-import PosInterfaceClientPaymentDialog from "./components/pos-interface-client-payment-dialog";
-import Image from "next/image";
-import { useForm, SubmitHandler } from "react-hook-form";
 
-// --- Payment Form Values ---
+import RecentSalesModalClient from './components/recent-sales-modal-client';
+import ProductCardClient from './product-card-client';
+import ExpensesReviewModalClient from './components/expenses-review-modal-client';
+import TilesCalculatorDialog from './components/tiles-calculator-dialog';
+import ExternalSaleDialog from './components/external-sale-dialog';
+import AddToCartDialog, { WarehouseDeduction } from './components/add-to-cart-dialog';
+
 type PaymentFormValues = {
   amountReceived: number;
   customerName?: string;
@@ -61,7 +62,6 @@ type PaymentFormValues = {
   status: "completed" | "held";
 };
 
-// --- Main Props Interface ---
 interface PosInterfaceClientProps {
   initialProducts: ProductForPos[];
   initialCategories: CategoryForPos[];
@@ -90,7 +90,6 @@ export default function PosInterfaceClient({
   const router = useRouter();
   const { formatCurrency } = useCurrencyFormatter();
 
-  // --- Cart State ---
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>("all");
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -98,45 +97,44 @@ export default function PosInterfaceClient({
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isProcessingSale, setIsProcessingSale] = useState(false);
 
-  // Add to Cart Dialog
-  const [addToCartOpen, setAddToCartOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<ProductForPos | null>(null);
-
-  // External Sale Dialog
+  // External Sale Dialog state
   const [isExternalSaleDialogOpen, setIsExternalSaleDialogOpen] = useState(false);
 
-  // Calculator & Recent Sales
+  // Modals for Header Actions (Recent Sales, Calculator, Expenses Review)
   const [isRecentSalesModalOpen, setIsRecentSalesModalOpen] = useState(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [isExpensesReviewModalOpen, setIsExpensesReviewModalOpen] = useState(false);
 
-  // Expenses Modal
-  const [isExpensesModalOpen, setIsExpensesModalOpen] = useState(false);
+  // State for AddToCartDialog
+  const [addToCartOpen, setAddToCartOpen] = useState(false);
+  const [selectedProductForAddToCart, setSelectedProductForAddToCart] = useState<ProductForPos | null>(null);
+  const [initialQtyForAddToCart, setInitialQtyForAddToCart] = useState(1);
+  const [initialNoteForAddToCart, setInitialNoteForAddToCart] = useState("");
 
-  // --- Payment Dialog State ---
+  useEffect(() => {
+    const stockMap: Record<string, ProductStockDetail[]> = {};
+    for (const stock of initialDetailedStock) {
+      if (!stockMap[stock.product_id]) stockMap[stock.product_id] = [];
+      stockMap[stock.product_id].push(stock);
+    }
+    setProductDetailedStock(stockMap);
+  }, [initialDetailedStock]);
+
   const paymentForm = useForm<PaymentFormValues>({
     defaultValues: { amountReceived: 0, customerName: "", customerPhone: "", status: "completed" },
   });
 
-  // --- Warehouse Options ---
-  const warehouseOptions =
-    selectedProduct && productDetailedStock[selectedProduct.id]
-      ? productDetailedStock[selectedProduct.id].map((stock) => ({
-          id: stock.warehouse_id,
-          name: stock.warehouses?.name || "Unknown",
-          quantity: stock.quantity,
-        }))
-      : [];
+  const externalSaleForm = useForm({
+    resolver: zodResolver(externalSaleFormSchema),
+    defaultValues: {
+      customerName: "Walk-in Customer",
+      customerPhone: "",
+      items: [],
+      status: "completed",
+      date: new Date(),
+    },
+  });
 
-  useEffect(() => {
-    const stockMap: Record<string, ProductStockDetail[]> = {};
-    initialDetailedStock.forEach((s: ProductStockDetail) => {
-      if (!stockMap[s.product_id]) stockMap[s.product_id] = [];
-      stockMap[s.product_id].push(s);
-    });
-    setProductDetailedStock(stockMap);
-  }, [initialDetailedStock]);
-
-  // --- Selectors and Derived Values ---
   const subtotal = useMemo(
     () => cart.reduce((sum: number, item: CartItem) => sum + item.total_line_price, 0),
     [cart]
@@ -145,9 +143,11 @@ export default function PosInterfaceClient({
 
   const filteredProducts = useMemo(() => {
     let productsToDisplay = initialProducts;
+
     if (activeCategory && activeCategory !== "all") {
       productsToDisplay = productsToDisplay.filter((p) => p.category_id === activeCategory);
     }
+
     if (productSearchQuery) {
       const lowerCaseQuery = productSearchQuery.toLowerCase();
       productsToDisplay = productsToDisplay.filter(
@@ -166,9 +166,11 @@ export default function PosInterfaceClient({
     return category?.unit_abbreviation || "";
   };
 
-  // --- Add to Cart Dialog Logic ---
-  const handleAddToCartClick = (product: ProductForPos) => {
-    setSelectedProduct(product);
+  const handleAddItemToCart = (product: ProductForPos) => {
+    setSelectedProductForAddToCart(product);
+    const existingCartItem = cart.find((item) => item.id === product.id);
+    setInitialQtyForAddToCart(existingCartItem?.quantity || 1);
+    setInitialNoteForAddToCart(existingCartItem?.note || "");
     setAddToCartOpen(true);
   };
 
@@ -180,45 +182,64 @@ export default function PosInterfaceClient({
   }: {
     qty: number;
     salePrice: number;
-    selectedWarehouses: { id: string; name: string; deducted: number }[];
+    selectedWarehouses: WarehouseDeduction[];
     note: string;
   }) => {
-    if (!selectedProduct) return;
+    if (!selectedProductForAddToCart) return;
 
-    const warehouseSelections = selectedWarehouses.map(w => ({
-      warehouse_id: w.id,
-      warehouse_name: w.name,
-      deducted_quantity: w.deducted,
+    const totalAvailableStock = (productDetailedStock[selectedProductForAddToCart.id] || []).reduce(
+      (sum: number, s: ProductStockDetail) => sum + s.quantity, 0
+    );
+    const totalDeductedQuantity = selectedWarehouses.reduce((sum, d) => sum + d.deducted, 0);
+
+    if (totalDeductedQuantity !== qty) {
+      toast.error("Total deducted quantity must match total required quantity.");
+      return;
+    }
+    if (totalDeductedQuantity > totalAvailableStock) {
+      toast.error(`Insufficient stock. Only ${totalAvailableStock} available for ${selectedProductForAddToCart.name}.`);
+      return;
+    }
+
+    const warehouse_selections: WarehouseSelection[] = selectedWarehouses.map((d): WarehouseSelection => ({
+      warehouse_id: d.id,
+      warehouse_name: d.name,
+      deducted_quantity: d.deducted,
     }));
 
     const newItem: CartItem = {
-      id: selectedProduct.id,
-      name: selectedProduct.name,
-      unique_reference: selectedProduct.unique_reference,
+      id: selectedProductForAddToCart.id,
+      name: selectedProductForAddToCart.name,
+      unique_reference: selectedProductForAddToCart.unique_reference,
       quantity: qty,
       unit_sale_price: salePrice,
       total_line_price: qty * salePrice,
-      note,
-      image_url: selectedProduct.image_url,
-      warehouse_selections: warehouseSelections,
+      image_url: selectedProductForAddToCart.image_url,
+      warehouse_selections,
+      note: note || undefined,
     };
 
     setCart((prevCart) => {
-      const filtered = prevCart.filter(item => item.id !== newItem.id);
-      return [...filtered, newItem];
+      const existingCartItemIndex = prevCart.findIndex(item => item.id === newItem.id);
+      if (existingCartItemIndex !== -1) {
+        const updatedCart = [...prevCart];
+        updatedCart[existingCartItemIndex] = newItem;
+        return updatedCart;
+      } else {
+        return [...prevCart, newItem];
+      }
     });
 
     setAddToCartOpen(false);
-    setSelectedProduct(null);
-    toast.success(`${selectedProduct.name} added/updated in cart.`);
+    setSelectedProductForAddToCart(null);
+    toast.success(`${newItem.name} added/updated in cart.`);
   };
 
   const handleRemoveItem = (index: number) => {
-    setCart((prevCart) => prevCart.filter((_, i) => i !== index));
+    setCart((prevCart) => prevCart.filter((_: CartItem, i: number) => i !== index));
     toast.info("Item removed from cart.");
   };
 
-  // --- Payment Logic ---
   const handlePayment = () => {
     if (cart.length === 0) {
       toast.error("Cart is empty. Add items before proceeding to payment.");
@@ -243,70 +264,82 @@ export default function PosInterfaceClient({
       return;
     }
 
-    const saleItemsPayload = cart.map((item: CartItem) => ({
-      product_id: item.id,
-      quantity: Number(item.quantity || 0),
-      unit_sale_price: Number(item.unit_sale_price || 0),
-      total_price: Number(item.quantity * item.unit_sale_price),
-      note: item.note,
-      warehouse_selections: item.warehouse_selections,
-    }));
-
-    const { data: cashierProfile, error: cashierProfileError } = await supabaseClient
-      .from("users")
-      .select("branch_id")
-      .eq("id", currentCashierId)
-      .single();
-
-    if (cashierProfileError || !cashierProfile?.branch_id) {
-      toast.error("Cashier's branch not found. Cannot finalize sale.");
-      setIsProcessingSale(false);
-      return;
-    }
-    const cashierBranchId = cashierProfile.branch_id;
-
-    const { data: rpcResponseData, error: funcError } = await supabaseClient
-      .rpc("process_sale_transaction", {
-        sale_data: {
-          sale_date: new Date().toISOString(),
-          cashier_id: currentCashierId,
-          branch_id: cashierBranchId,
-          customer_name: values.customerName || "Walk-in Customer",
-          customer_phone: values.customerPhone || null,
-          total_amount: grandTotal,
-          payment_method: "Cash",
-          status: values.status,
-          items: saleItemsPayload,
-        },
+    const stockDeductionPromises = cart.flatMap((item: CartItem) =>
+      item.warehouse_selections.map(async (deduction: WarehouseSelection) => {
+        const { error: adjustError } = await supabaseClient.rpc('adjust_stock_quantity', {
+          p_product_id: item.id,
+          p_warehouse_id: deduction.warehouse_id,
+          p_quantity_change: -deduction.deducted_quantity,
+          p_user_id: currentCashierId,
+          p_reason: `Sale deduction from POS for ${item.name} (${deduction.deducted_quantity} from ${deduction.warehouse_name})`
+        });
+        if (adjustError) {
+          console.error(`Error deducting stock for product ${item.name} from ${deduction.warehouse_name}:`, adjustError.message);
+          throw new Error(`Stock deduction failed for ${item.name} from ${deduction.warehouse_name}.`);
+        }
       })
-      .returns<{ transaction_reference: string; message: string }>();
+    );
 
-    if (funcError) {
-      toast.error("Failed to record sale.", { description: funcError.message });
-      setIsProcessingSale(false);
-      return;
-    }
+    try {
+      await Promise.all(stockDeductionPromises);
 
-    if (
-      rpcResponseData &&
-      typeof rpcResponseData === "object" &&
-      "transaction_reference" in rpcResponseData
-    ) {
-      const transactionRef = (rpcResponseData as { transaction_reference: string }).transaction_reference;
+      const { data: cashierProfile, error: cashierProfileError } = await supabaseClient
+        .from("users")
+        .select("branch_id")
+        .eq("id", currentCashierId)
+        .single();
+
+      if (cashierProfileError || !cashierProfile?.branch_id) {
+        throw new Error("Cashier's branch not found. Cannot finalize sale.");
+      }
+      const cashierBranchId = cashierProfile.branch_id;
+
+      const { data: rpcResponseData, error: funcError } = await supabaseClient
+        .rpc("process_sale_transaction", {
+          sale_data: {
+            sale_date: new Date().toISOString(),
+            cashier_id: currentCashierId,
+            branch_id: cashierBranchId,
+            customer_name: values.customerName || "Walk-in Customer",
+            customer_phone: values.customerPhone || null,
+            total_amount: grandTotal,
+            payment_method: "Cash",
+            status: values.status,
+            items: cart.map(item => ({
+              product_id: item.id,
+              quantity: item.quantity,
+              unit_sale_price: item.unit_sale_price,
+              total_price: item.total_line_price,
+              note: item.note || "",
+            })),
+          },
+        })
+        .returns<{ transaction_reference: string; message: string }>();
+
+      if (funcError) {
+        throw new Error(funcError.message || "Failed to record sale.");
+      }
+
+      if (!rpcResponseData || !('transaction_reference' in rpcResponseData)) {
+        throw new Error("Sale completed, but no transaction reference returned.");
+      }
+      const transactionRef = rpcResponseData.transaction_reference;
       toast.success(`Sale completed! Ref: ${transactionRef}`);
       setIsPaymentDialogOpen(false);
       setCart([]);
       router.push(`/receipt/${transactionRef}`);
       router.refresh();
-      setIsProcessingSale(false);
-      return;
-    }
 
-    toast.error("Sale recorded, but failed to receive transaction reference.");
-    setIsProcessingSale(false);
+    } catch (e: any) {
+      toast.error("Sale processing failed.", {
+        description: e.message || "An unknown error occurred during sale processing.",
+      });
+      console.error("Full sale processing error:", e);
+    } finally {
+      setIsProcessingSale(false);
+    }
   };
 
-  // --- External Sale Logic ---
   const handleExternalSaleSubmit = async (values: ExternalSaleFormValues) => {
     setIsProcessingSale(true);
 
@@ -342,6 +375,8 @@ export default function PosInterfaceClient({
     }
     const cashierBranchId = cashierProfile.branch_id;
 
+    const externalTransactionRef = `EXT-${Date.now()}`;
+
     const { data: externalRpcResponseData, error: externalFuncError } =
       await supabaseClient.rpc("process_external_sale_transaction", {
         external_sale_data: {
@@ -352,7 +387,10 @@ export default function PosInterfaceClient({
           customer_phone: values.customerPhone || null,
           total_amount: totalExternalSaleAmount,
           payment_method: "Cash",
-          status: values.status,
+          status: "completed",
+          authorized_by_user_id: null,
+          authorization_code_hashed: null,
+          transaction_reference: externalTransactionRef,
           items: saleItemsPayload,
         },
       }).returns<{ external_transaction_reference: string; message: string }>();
@@ -365,78 +403,56 @@ export default function PosInterfaceClient({
       return;
     }
 
-    if (
-      externalRpcResponseData &&
-      typeof externalRpcResponseData === "object" &&
-      "external_transaction_reference" in externalRpcResponseData
-    ) {
-      const externalTransactionRef = (
-        externalRpcResponseData as { external_transaction_reference: string }
-      ).external_transaction_reference;
-      toast.success(`External Sale completed! Ref: ${externalTransactionRef}`);
-      setIsExternalSaleDialogOpen(false);
-      setCart([]);
-      router.push(`/receipt/external/${externalTransactionRef}`);
-      router.refresh();
+    if (!externalRpcResponseData || !('external_transaction_reference' in externalRpcResponseData)) {
+      toast.error("External sale completed, but no transaction reference returned.");
       setIsProcessingSale(false);
       return;
     }
-
-    toast.error("External sale recorded, but failed to get transaction reference.");
+    const returnedTransactionRef = externalRpcResponseData.external_transaction_reference;
+    toast.success(`External Sale completed! Ref: ${returnedTransactionRef}`);
+    setIsExternalSaleDialogOpen(false);
+    setCart([]);
+    externalSaleForm.reset();
+    router.push(`/receipt/external/${returnedTransactionRef}`);
+    router.refresh();
     setIsProcessingSale(false);
   };
 
-  // --- Logout Handler (redirect to app root)
+  // Logout Handler
   const handleLogout = async () => {
     await supabaseClient.auth.signOut();
     router.push('/');
   };
 
-  // --- Manual Refresh Handler (full page reload)
+  // Manual Refresh Handler
   const handleManualRefresh = () => {
     window.location.reload();
     toast.success("Page refreshed!");
   };
 
-  // --- Date/Time State ---
-  const [currentDateTime, setCurrentDateTime] = useState(() =>
-    new Date().toLocaleString("en-GB", { hour12: false })
-  );
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentDateTime(new Date().toLocaleString("en-GB", { hour12: false }));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // --- Branch Name ---
-  const currentBranch =
-    branches.find((b) => b.id === currentUserBranchId)?.name || "Unknown Branch";
-
-  // --- Render ---
   return (
     <div className="flex flex-col h-screen">
-      {/* Header */}
-      <header className="w-full bg-white border-b shadow-sm p-8 min-h-[96px] flex items-center justify-between space-x-2 relative">
-        {/* Left: Buttons group */}
+      {/* Header (with top left and right controls) */}
+      <header className="w-full bg-white border-b shadow-sm p-4 flex items-center justify-between">
+        {/* Left group: Expenses, Recent Sales, Calculator */}
         <div className="flex gap-2 items-center">
+          <Button
+            variant="outline"
+            onClick={() => setIsExpensesReviewModalOpen(true)}
+            title="Expenses Review"
+            className="flex gap-2 items-center"
+          >
+            <ReceiptText className="h-4 w-4" />
+            Expenses
+          </Button>
           <Button
             variant="outline"
             onClick={() => setIsRecentSalesModalOpen(true)}
             title="Recent Sales"
             className="flex gap-2 items-center"
           >
-            <History className="mr-1 h-5 w-5" />
+            <History className="h-4 w-4" />
             Recent Sales
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => setIsExpensesModalOpen(true)}
-            title="Expenses Review"
-            className="flex gap-2 items-center"
-          >
-            <Receipt className="mr-1 h-5 w-5" />
-            Expenses
           </Button>
           <Button
             variant="outline"
@@ -444,38 +460,20 @@ export default function PosInterfaceClient({
             title="Tiles Pricing Calculator"
             className="flex gap-2 items-center"
           >
-            <Calculator className="mr-1 h-5 w-5" />
+            <Calculator className="h-4 w-4" />
             Calculator
           </Button>
-          {/* Date/Time */}
-          <span className="ml-4 font-mono text-gray-700 text-sm">{currentDateTime}</span>
         </div>
-        {/* Center: Logo ONLY */}
-        <div className="absolute left-1/2 top-1/2 flex flex-col items-center -translate-x-1/2 -translate-y-1/2">
-          <Image
-            src="/megacompany.svg"
-            alt="Business Logo"
-            width={150}
-            height={20}
-            className=""
-            style={{ objectFit: "contain" }}
-            priority
-          />
-        </div>
-        {/* Right: Branch Name, Refresh & Logout */}
-        <div className="flex gap-2 items-center ml-auto">
-          {/* Branch Name */}
-          <div className="px-3 py-1 rounded bg-gray-100 text-gray-700 font-semibold text-sm">
-            {currentBranch}
-          </div>
-          {/* Refresh Button: icon only */}
+        
+        {/* Right group: Refresh, Logout */}
+        <div className="flex gap-2 items-center">
           <Button
             variant="outline"
             onClick={handleManualRefresh}
             title="Refresh Page"
             className="flex gap-2 items-center"
           >
-            <RefreshCw className="h-5 w-5" />
+            <RefreshCw className="h-4 w-4" />
           </Button>
           <Button
             variant="destructive"
@@ -483,16 +481,15 @@ export default function PosInterfaceClient({
             title="Logout"
             className="flex gap-2 items-center"
           >
-            <LogOut className="h-5 w-5" />
+            <LogOut className="h-4 w-4" />
             Logout
           </Button>
         </div>
       </header>
-      {/* Main content: Cart, Products, and Dialogs */}
       <div className="flex flex-col md:flex-row flex-grow">
         {/* Cart Section */}
-        <div className="md:w-[48%] lg:w-1/2 p-8 flex flex-col bg-white border-r shadow-md h-full min-h-0">
-          <h2 className="text-3xl font-bold mb-6">Cart</h2>
+        <div className="md:w-2/5 p-4 flex flex-col bg-white border-r shadow-md h-full min-h-0 relative">
+          <h2 className="text-2xl font-bold mb-4">Cart</h2>
           <div className="flex-grow overflow-y-auto">
             <Table>
               <TableHeader>
@@ -509,13 +506,16 @@ export default function PosInterfaceClient({
                 {cart.length > 0 ? (
                   cart.map((item: CartItem, index: number) => (
                     <TableRow key={item.id + (item.warehouse_selections?.map(ws => ws.warehouse_id).join("_") || "")}>
-                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {item.name}
+                        {item.note && <span className="block text-xs italic text-gray-500">Note: {item.note}</span>}
+                      </TableCell>
                       <TableCell>{getUnitForProduct(item.id)}</TableCell>
                       <TableCell>
                         {item.quantity}
-                        {item.warehouse_selections && item.warehouse_selections.length > 1 && (
+                        {item.warehouse_selections && item.warehouse_selections.length > 0 && (
                           <div className="text-xs text-gray-500 mt-1">
-                            {item.warehouse_selections.map(ws => (
+                            {item.warehouse_selections.map((ws: WarehouseSelection) => (
                               <span key={ws.warehouse_id} className="mr-2">
                                 {ws.warehouse_name}: {ws.deducted_quantity}
                               </span>
@@ -560,11 +560,7 @@ export default function PosInterfaceClient({
             <div className="mb-6"></div>
             <Button
               className="w-full text-xl py-5 mb-3 font-semibold transition focus:ring-2 focus:ring-primary focus:outline-none"
-              style={{
-                borderRadius: "0.75rem",
-                fontSize: "1.5rem",
-                height: "4rem"
-              }}
+              style={{ borderRadius: "0.75rem", fontSize: "1.5rem", height: "4rem" }}
               onClick={handlePayment}
               disabled={isProcessingSale || cart.length === 0}
               variant="default"
@@ -577,11 +573,7 @@ export default function PosInterfaceClient({
             </Button>
             <Button
               className="w-full text-xl py-5 font-semibold transition focus:ring-2 focus:ring-primary focus:outline-none"
-              style={{
-                borderRadius: "0.75rem",
-                fontSize: "1.5rem",
-                height: "4rem"
-              }}
+              style={{ borderRadius: "0.75rem", fontSize: "1.5rem", height: "4rem" }}
               variant="secondary"
               onClick={() => setIsExternalSaleDialogOpen(true)}
               disabled={isProcessingSale}
@@ -592,6 +584,7 @@ export default function PosInterfaceClient({
         </div>
         {/* Product Section */}
         <div className="md:w-3/5 p-4 flex flex-col h-screen overflow-hidden">
+          {/* Search and Category Filter */}
           <div className="mb-4 flex flex-col sm:flex-row gap-4">
             <div className="flex-grow relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
@@ -608,7 +601,7 @@ export default function PosInterfaceClient({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                {initialCategories.map((cat) => (
+                {initialCategories.map((cat: CategoryForPos) => (
                   <SelectItem key={cat.id} value={cat.id}>
                     {cat.name}
                   </SelectItem>
@@ -616,7 +609,7 @@ export default function PosInterfaceClient({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex-grow overflow-y-auto pr-2" style={{ maxHeight: 'calc(100vh - 170px)' }}>
+          <div className="flex-grow overflow-y-auto pr-2" style={{ maxHeight: 'calc(100vh - 120px)' }}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredProducts.length > 0 ? (
                 filteredProducts.map((product: ProductForPos) => (
@@ -633,7 +626,7 @@ export default function PosInterfaceClient({
                       if (totalStock <= threshold) return "text-yellow-500";
                       return "text-green-500";
                     }}
-                    handleAddItemToCart={handleAddToCartClick}
+                    handleAddItemToCart={handleAddItemToCart}
                   />
                 ))
               ) : (
@@ -650,25 +643,133 @@ export default function PosInterfaceClient({
         open={addToCartOpen}
         onOpenChange={(open) => {
           setAddToCartOpen(open);
-          if (!open) setSelectedProduct(null);
+          if (!open) setSelectedProductForAddToCart(null);
         }}
-        productName={selectedProduct?.name || ""}
-        salePrice={selectedProduct?.sale_price ?? 0}
-        userRole={currentUserRole}
-        warehouses={warehouseOptions}
-        initialQty={1}
+        productName={selectedProductForAddToCart?.name || ""}
+        productSalePrice={selectedProductForAddToCart?.sale_price || 0}
+        warehouses={productDetailedStock[selectedProductForAddToCart?.id || '']?.map(sd => ({
+          id: sd.warehouse_id,
+          name: sd.warehouses?.name || 'Unknown',
+          quantity: sd.quantity,
+        })) || []}
+        initialQty={initialQtyForAddToCart}
+        initialNote={initialNoteForAddToCart}
+        initialSalePrice={cart.find(item => item.id === selectedProductForAddToCart?.id)?.unit_sale_price}
+        currentUserRole={currentUserRole}
         onSubmit={handleAddToCartSubmit}
       />
+
       {/* Payment Dialog */}
-      <PosInterfaceClientPaymentDialog
-        isOpen={isPaymentDialogOpen}
-        onOpenChange={setIsPaymentDialogOpen}
-        onSubmit={onPaymentFormSubmit}
-        isProcessing={isProcessingSale}
-        grandTotal={grandTotal}
-        formatCurrency={formatCurrency}
-        form={paymentForm}
-      />
+      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Process Payment</DialogTitle>
+            <DialogDescription className="text-base text-muted-foreground mb-4">
+              Finalize the sale and calculate change.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={paymentForm.handleSubmit(onPaymentFormSubmit)}
+            className="flex flex-col gap-6 py-2"
+          >
+            <div>
+              <Label htmlFor="amountReceived" className="mb-2 block text-base font-semibold">Amount Received</Label>
+              <Input
+                id="amountReceived"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                max="9999999.99"
+                className="h-12 text-base"
+                placeholder="0.00"
+                {...paymentForm.register("amountReceived", {
+                  valueAsNumber: true,
+                  required: true,
+                  validate: (val) =>
+                    val !== undefined &&
+                    !isNaN(val) &&
+                    /^\d+(\.\d{1,2})?$/.test(val.toString()) ||
+                    "Amount must be a number with up to 2 decimal places",
+                })}
+                onWheel={e => (e.target as HTMLInputElement).blur()}
+              />
+              {paymentForm.formState.errors.amountReceived && (
+                <span className="text-red-500 text-xs mt-1 block">
+                  {paymentForm.formState.errors.amountReceived.message}
+                </span>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="customerName" className="mb-2 block text-base font-semibold">Customer Name (Optional)</Label>
+              <Input
+                id="customerName"
+                className="h-12 text-base"
+                {...paymentForm.register("customerName")}
+              />
+            </div>
+            <div>
+              <Label htmlFor="customerPhone" className="mb-2 block text-base font-semibold">Customer Phone (Optional)</Label>
+              <Input
+                id="customerPhone"
+                className="h-12 text-base"
+                {...paymentForm.register("customerPhone")}
+              />
+            </div>
+            <div>
+              <Label className="mb-2 block text-base font-semibold">Status</Label>
+              <div className="flex flex-row gap-6">
+                <label className={cn(`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors`,
+                  paymentForm.watch("status") === "completed" ? "bg-green-50 border-green-400 shadow-sm" : "hover:bg-green-100 border-green-200"
+                )}>
+                  <input
+                    type="radio"
+                    {...paymentForm.register("status")}
+                    value="completed"
+                    checked={paymentForm.watch("status") === "completed"}
+                    className="accent-green-600 w-5 h-5 rounded"
+                    style={{ accentColor: "#16a34a" }}
+                  />
+                  <span className="text-green-700 font-medium">Completed</span>
+                </label>
+                <label className={cn(`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors`,
+                  paymentForm.watch("status") === "held" ? "bg-gray-100 border-gray-400 shadow-sm" : "hover:bg-gray-200 border-gray-200"
+                )}>
+                  <input
+                    type="radio"
+                    {...paymentForm.register("status")}
+                    value="held"
+                    checked={paymentForm.watch("status") === "held"}
+                    className="accent-gray-400 w-5 h-5 rounded"
+                    style={{ accentColor: "#d1d5db" }}
+                  />
+                  <span className="text-gray-700 font-medium">Held</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-between items-center text-lg font-semibold mt-2">
+              <span>Change Due:</span>
+              <span>
+                {formatCurrency((paymentForm.watch("amountReceived") || 0) - grandTotal)}
+              </span>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button
+                type="submit"
+                className="w-full h-12 text-lg font-semibold"
+                disabled={isProcessingSale}
+              >
+                {isProcessingSale ? (
+                  <Loader2 className="animate-spin mr-2" />
+                ) : (
+                  "Confirm Payment"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* External Sale Dialog */}
       <ExternalSaleDialog
         open={isExternalSaleDialogOpen}
@@ -677,9 +778,8 @@ export default function PosInterfaceClient({
         onSubmit={handleExternalSaleSubmit}
         isProcessing={isProcessingSale}
       />
-      {/* Calculator Dialog */}
-      <TilesCalculatorDialog open={isCalculatorOpen} onOpenChange={setIsCalculatorOpen} />
-      {/* Recent Sales */}
+
+      {/* Recent Sales Modal */}
       <RecentSalesModalClient
         initialRecentSales={initialRecentSales}
         isOpen={isRecentSalesModalOpen}
@@ -687,16 +787,20 @@ export default function PosInterfaceClient({
         currentCashierId={currentCashierId}
         currentUserRole={currentUserRole}
       />
+
+      {/* Tiles Calculator Dialog */}
+      <TilesCalculatorDialog open={isCalculatorOpen} onOpenChange={setIsCalculatorOpen} />
+
       {/* Expenses Review Modal */}
       <ExpensesReviewModalClient
         initialExpenses={initialExpensesForReview}
         initialExpenseCategories={initialExpenseCategoriesForReview}
         currentCashierId={currentCashierId}
-        isOpen={isExpensesModalOpen}
-        onClose={() => setIsExpensesModalOpen(false)}
+        currentUserRole={currentUserRole}
         branches={branches}
         currentUserBranchId={currentUserBranchId}
-        currentUserRole={currentUserRole}
+        isOpen={isExpensesReviewModalOpen}
+        onClose={() => setIsExpensesReviewModalOpen(false)}
       />
     </div>
   );
