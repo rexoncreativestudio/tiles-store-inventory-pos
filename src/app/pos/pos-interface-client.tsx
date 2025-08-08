@@ -51,12 +51,13 @@ import AddToCartDialog, { WarehouseDeduction } from './components/add-to-cart-di
 // Payment Dialog import (corrected props)
 import PosInterfaceClientPaymentDialog from './components/pos-interface-client-payment-dialog';
 
+// FIX: Changed 'date' type from string to Date to resolve the type mismatch
 type PaymentFormValues = {
   amountReceived: number;
   customerName?: string;
   customerPhone?: string;
   status: "completed" | "held";
-  date?: string;
+  date?: Date;
 };
 
 interface PosInterfaceClientProps {
@@ -117,8 +118,9 @@ export default function PosInterfaceClient({
     setProductDetailedStock(stockMap);
   }, [initialDetailedStock]);
 
+  // FIX: Changed default value for 'date' to a Date object
   const paymentForm = useForm<PaymentFormValues>({
-    defaultValues: { amountReceived: 0, customerName: "", customerPhone: "", status: "completed", date: new Date().toISOString().split("T")[0] },
+    defaultValues: { amountReceived: 0, customerName: "", customerPhone: "", status: "completed", date: new Date() },
   });
 
   const externalSaleForm = useForm({
@@ -243,7 +245,8 @@ export default function PosInterfaceClient({
       return;
     }
     setIsPaymentDialogOpen(true);
-    paymentForm.reset({ amountReceived: grandTotal, customerName: "", customerPhone: "", status: "completed", date: new Date().toISOString().split("T")[0] });
+    // FIX: Updated the reset to use a Date object
+    paymentForm.reset({ amountReceived: grandTotal, customerName: "", customerPhone: "", status: "completed", date: new Date() });
   };
 
   const onPaymentFormSubmit: SubmitHandler<PaymentFormValues> = async (values) => {
@@ -294,7 +297,8 @@ export default function PosInterfaceClient({
       const { data: rpcResponseData, error: funcError } = await supabaseClient
         .rpc("process_sale_transaction", {
           sale_data: {
-            sale_date: values.date ? new Date(values.date).toISOString() : new Date().toISOString(),
+            // FIX: Use the Date object's toISOString() directly
+            sale_date: values.date?.toISOString() || new Date().toISOString(),
             cashier_id: currentCashierId,
             branch_id: cashierBranchId,
             customer_name: values.customerName || "Walk-in Customer",
@@ -702,3 +706,4 @@ export default function PosInterfaceClient({
     </div>
   );
 }   
+   

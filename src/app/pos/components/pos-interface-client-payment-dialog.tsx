@@ -19,12 +19,13 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
+// FIX: Made the date property optional to handle cases where it might be undefined
 type PaymentFormValues = {
   amountReceived: number;
   customerName?: string;
   customerPhone?: string;
   status: "completed" | "held";
-  date: Date;
+  date?: Date;
 };
 
 interface PaymentDialogModalProps {
@@ -58,11 +59,12 @@ export default function PosInterfaceClientPaymentDialog({
     }
   }, [amountReceived, grandTotal, status, form]);
 
-  useEffect(() => {
-    if (!date) {
-      form.setValue("date", new Date());
-    }
-  }, [date, form]);
+  // FIX: Removed this useEffect as the parent component now handles the default date
+  // useEffect(() => {
+  //   if (!date) {
+  //     form.setValue("date", new Date());
+  //   }
+  // }, [date, form]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -129,6 +131,7 @@ export default function PosInterfaceClientPaymentDialog({
                 <Calendar
                   mode="single"
                   selected={date}
+                  // FIX: The onSelect handler correctly passes the date
                   onSelect={(selectedDate) => form.setValue("date", selectedDate!)}
                   initialFocus
                 />
@@ -216,3 +219,4 @@ export default function PosInterfaceClientPaymentDialog({
     </Dialog>
   );
 }
+   
