@@ -3,11 +3,10 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCurrencyFormatter } from '@/lib/formatters';
-import { Input } from '@/components/ui/input';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle
 } from '@/components/ui/card';
-import { Search, Eye, Pencil, Trash2, CalendarIcon, DollarSign, Users, Loader2 } from 'lucide-react';
+import { Eye, Pencil, Trash2, CalendarIcon, DollarSign, Users, Loader2 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -33,6 +32,18 @@ interface ExpenseOverviewClientProps {
   currentPage: number;
   itemsPerPage: number;
   currentUserId: string;
+  isFilterActive: boolean;
+}
+
+function getMonthDateRange() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+  return { firstDay, lastDay };
 }
 
 export default function ExpenseOverviewClient({
@@ -44,55 +55,47 @@ export default function ExpenseOverviewClient({
   currentPage,
   itemsPerPage,
   currentUserId,
+  isFilterActive,
 }: ExpenseOverviewClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { formatCurrency } = useCurrencyFormatter();
 
-  const [expenseSearchQuery, setExpenseSearchQuery] = useState<string>(searchParams.get('query') || '');
+  // Default date filter: 1st to last day of this month
+  const { firstDay, lastDay } = getMonthDateRange();
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>(searchParams.get('category') || 'all');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>(searchParams.get('branch') || 'all');
-  const [selectedUserFilter, setSelectedUserFilter] = useState<string>(searchParams.get('user') || 'all');
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(searchParams.get('dateFrom') ? parseISO(searchParams.get('dateFrom')!) : undefined);
-  const [dateTo, setDateTo] = useState<Date | undefined>(searchParams.get('dateTo') ? parseISO(searchParams.get('dateTo')!) : undefined);
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(searchParams.get('dateFrom') ? parseISO(searchParams.get('dateFrom')!) : firstDay);
+  const [dateTo, setDateTo] = useState<Date | undefined>(searchParams.get('dateTo') ? parseISO(searchParams.get('dateTo')!) : lastDay);
 
   const [isViewDetailsDialogOpen, setIsViewDetailsDialogOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<ExpenseRecordForDisplay | null>(null);
 
-  // State for edit modal
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedExpenseForEdit, setSelectedExpenseForEdit] = useState<ExpenseRecordForDisplay | undefined>(undefined);
 
-  // State for delete confirmation dialog
   const [isDeleteConfirmDialogOpen, setIsDeleteConfirmDialogOpen] = useState(false);
   const [expenseToDeleteId, setExpenseToDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Function to apply filters by updating URL search parameters
   const applyFilters = () => {
     const params = new URLSearchParams();
-    if (expenseSearchQuery) params.set('query', expenseSearchQuery);
     if (selectedCategoryFilter !== 'all') params.set('category', selectedCategoryFilter);
     if (selectedBranchFilter !== 'all') params.set('branch', selectedBranchFilter);
-    if (selectedUserFilter !== 'all') params.set('user', selectedUserFilter);
     if (dateFrom) params.set('dateFrom', dateFrom.toISOString());
     if (dateTo) params.set('dateTo', dateTo.toISOString());
-    params.set('page', '1'); // Reset to first page on filter apply
+    params.set('page', '1');
     router.push(`/dashboard/expenses?${params.toString()}`);
   };
 
-  // Function to reset filters
   const resetFilters = () => {
-    setExpenseSearchQuery('');
     setSelectedCategoryFilter('all');
     setSelectedBranchFilter('all');
-    setSelectedUserFilter('all');
-    setDateFrom(undefined);
-    setDateTo(undefined);
+    setDateFrom(firstDay);
+    setDateTo(lastDay);
     router.push('/dashboard/expenses');
   };
 
-  // Handle page change for pagination
   const handlePageChange = (page: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('page', page.toString());
@@ -109,7 +112,6 @@ export default function ExpenseOverviewClient({
     setIsEditModalOpen(true);
   };
 
-  // Function to open delete confirmation dialog
   const openDeleteConfirmDialog = (expenseId: string) => {
     setExpenseToDeleteId(expenseId);
     setIsDeleteConfirmDialogOpen(true);
@@ -149,12 +151,10 @@ export default function ExpenseOverviewClient({
     router.refresh();
   };
 
-  // Summary calculations for filtered expenses
   const totalExpensesAmount = useMemo(() => {
     return initialExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   }, [initialExpenses]);
 
-  // Branch Total Expenses Cards
   const branchTotalExpenses = useMemo(() => {
     const branchSums: { [key: string]: number } = {};
     initialExpenses.forEach(expense => {
@@ -164,7 +164,6 @@ export default function ExpenseOverviewClient({
     return branchSums;
   }, [initialExpenses]);
 
-  // Prepare a sorted list of branches with their totals for dynamic card rendering
   const branchesWithExpenseTotals = useMemo(() => {
     return initialBranches.map(branch => {
       const totalAmount = branchTotalExpenses[branch.name] || 0;
@@ -177,195 +176,189 @@ export default function ExpenseOverviewClient({
   }, [initialBranches, branchTotalExpenses]);
 
   return (
-    <div className="space-y-6">
-      {/* Filters and Search Bar */}
-      <div className="flex flex-wrap items-end gap-4 mb-6">
-        <div className="flex-grow relative w-full sm:w-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-          <Input
-            placeholder="Search by description, vendor, category, or user..."
-            className="pl-10 w-full"
-            value={expenseSearchQuery}
-            onChange={(e) => setExpenseSearchQuery(e.target.value)}
-          />
-        </div>
-
-        <Select onValueChange={setSelectedCategoryFilter} value={selectedCategoryFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {initialExpenseCategories.map(cat => (
-              <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select onValueChange={setSelectedBranchFilter} value={selectedBranchFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="All Branches" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Branches</SelectItem>
-            {initialBranches.map(branch => (
-              <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select onValueChange={setSelectedUserFilter} value={selectedUserFilter}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="All Users" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Users</SelectItem>
-            {initialUsers.map(user => (
-              <SelectItem key={user.id} value={user.id}>{user.email}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Date Range Filter */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant={"outline"}
-              className={cn(
-                "w-full sm:w-[240px] justify-start text-left font-normal",
-                (!dateFrom && !dateTo) && "text-muted-foreground"
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateFrom ? (
-                dateTo ? `${format(dateFrom, "PPP")} - ${format(dateTo, "PPP")}` : format(dateFrom, "PPP")
-              ) : (
-                <span>Select date range</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
-            <Calendar
-              mode="range"
-              selected={{ from: dateFrom, to: dateTo }}
-              onSelect={(range: { from?: Date; to?: Date } | undefined) => {
-                setDateFrom(range?.from);
-                setDateTo(range?.to);
-              }}
-              numberOfMonths={2}
-            />
-          </PopoverContent>
-        </Popover>
-        
-        <Button onClick={applyFilters} className="self-end">Apply Filters</Button>
-        <Button variant="outline" onClick={resetFilters} className="self-end">Reset Filters</Button>
-      </div>
-      
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalExpensesAmount)}</div>
-            <p className="text-xs text-muted-foreground">Total amount spent (filtered)</p>
-          </CardContent>
-        </Card>
-        {branchesWithExpenseTotals.map(branch => (
-          <Card key={branch.id}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{branch.name} Expenses</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(branch.totalAmount)}</div>
-              <p className="text-xs text-muted-foreground">Total for this branch (filtered)</p>
+    <div className="bg-gradient-to-br from-gray-100 via-white to-gray-200 min-h-screen p-0 sm:p-8 flex flex-col gap-8">
+      {/* --- Filters Section --- */}
+      <div className="w-full">
+        <section className="max-w-7xl mx-auto">
+          <Card className="rounded-2xl shadow-md">
+            <CardContent className="p-6">
+              <div className="flex flex-wrap items-end gap-4">
+                <Select onValueChange={setSelectedCategoryFilter} value={selectedCategoryFilter}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {initialExpenseCategories.map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={setSelectedBranchFilter} value={selectedBranchFilter}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="All Branches" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Branches</SelectItem>
+                    {initialBranches.map(branch => (
+                      <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full sm:w-[240px] justify-start text-left font-normal",
+                        (!dateFrom && !dateTo) && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateFrom ? (
+                        dateTo ? `${format(dateFrom, "PPP")} - ${format(dateTo, "PPP")}` : format(dateFrom, "PPP")
+                      ) : (
+                        <span>Select date range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="range"
+                      selected={{ from: dateFrom, to: dateTo }}
+                      onSelect={(range: { from?: Date; to?: Date } | undefined) => {
+                        setDateFrom(range?.from);
+                        setDateTo(range?.to);
+                      }}
+                      numberOfMonths={2}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button onClick={applyFilters} className="self-end">Apply Filters</Button>
+                <Button variant="outline" onClick={resetFilters} className="self-end">Reset Filters</Button>
+              </div>
             </CardContent>
           </Card>
-        ))}
-        {initialBranches.length === 0 && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Branch Expenses</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalExpensesAmount)}</div>
-              <p className="text-xs text-muted-foreground">Overall across branches (filtered)</p>
-            </CardContent>
-          </Card>
-        )}
+        </section>
       </div>
 
-      {/* Expenses Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Expense Records</CardTitle>
-          <CardDescription>All recorded business expenses.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[5%]">SN</TableHead>
-                <TableHead className="w-[12%]">Date</TableHead>
-                <TableHead className="w-[15%]">Category</TableHead>
-                <TableHead className="w-[20%]">Description</TableHead>
-                <TableHead className="w-[15%]">Vendor/Notes</TableHead>
-                <TableHead className="w-[10%]">Branch</TableHead>
-                <TableHead className="w-[10%]">Recorded By</TableHead>
-                <TableHead className="w-[10%] text-right">Amount</TableHead>
-                <TableHead className="w-[8%] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {initialExpenses && initialExpenses.length > 0 ? (
-                initialExpenses.map((expense, idx) => (
-                  <TableRow key={expense.id}>
-                    <TableCell>{idx + 1}</TableCell>
-                    <TableCell>{format(parseISO(expense.date), 'PPP')}</TableCell>
-                    <TableCell>{expense.expense_categories?.name || 'N/A'}</TableCell>
-                    <TableCell>{expense.description || 'N/A'}</TableCell>
-                    <TableCell>{expense.vendor_notes || 'N/A'}</TableCell>
-                    <TableCell>{expense.branches?.name || 'N/A'}</TableCell>
-                    <TableCell>{expense.users?.email || 'N/A'}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
-                    <TableCell className="text-right flex space-x-2 justify-end">
-                      <Button variant="outline" size="sm" onClick={() => handleViewDetails(expense)} title="View Details">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleEditExpense(expense)} title="Edit Expense">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => openDeleteConfirmDialog(expense.id)} title="Delete Expense">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center">
-                    No expense records found matching your criteria.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* --- Cards Section --- */}
+      <div className="w-full">
+        <section className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="rounded-2xl shadow-md">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(totalExpensesAmount)}</div>
+                <p className="text-xs text-muted-foreground">Total amount spent (filtered)</p>
+              </CardContent>
+            </Card>
+            {branchesWithExpenseTotals.map(branch => (
+              <Card key={branch.id} className="rounded-2xl shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{branch.name} Expenses</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatCurrency(branch.totalAmount)}</div>
+                  <p className="text-xs text-muted-foreground">Total for this branch (filtered)</p>
+                </CardContent>
+              </Card>
+            ))}
+            {initialBranches.length === 0 && (
+              <Card className="rounded-2xl shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Branch Expenses</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatCurrency(totalExpensesAmount)}</div>
+                  <p className="text-xs text-muted-foreground">Overall across branches (filtered)</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </section>
+      </div>
 
-      {/* Pagination Component */}
-      <Pagination
-        totalItems={totalItems}
-        itemsPerPage={itemsPerPage}
-        currentPage={currentPage}
-        onPageChange={handlePageChange}
-      />
+      {/* --- Table Section --- */}
+      <div className="w-full">
+        <section className="max-w-7xl mx-auto">
+          <Card className="rounded-2xl shadow-lg">
+            <CardHeader>
+              <CardTitle>Expense Records</CardTitle>
+              <CardDescription>All recorded business expenses.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="w-full overflow-x-auto">
+                <Table className="min-w-[950px] w-full table-auto rounded-md overflow-hidden">
+                  <TableHeader className="bg-gray-50">
+                    <TableRow>
+                      <TableHead className="w-[5%]">SN</TableHead>
+                      <TableHead className="w-[12%]">Date</TableHead>
+                      <TableHead className="w-[15%]">Category</TableHead>
+                      <TableHead className="w-[20%]">Description</TableHead>
+                      <TableHead className="w-[15%]">Vendor/Notes</TableHead>
+                      <TableHead className="w-[10%]">Branch</TableHead>
+                      <TableHead className="w-[10%]">Recorded By</TableHead>
+                      <TableHead className="w-[10%] text-right">Amount</TableHead>
+                      <TableHead className="w-[8%] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {initialExpenses && initialExpenses.length > 0 ? (
+                      initialExpenses.map((expense, idx) => (
+                        <TableRow key={expense.id} className="hover:bg-gray-100 transition-colors">
+                          <TableCell>{idx + 1}</TableCell>
+                          <TableCell>{format(parseISO(expense.date), 'PPP')}</TableCell>
+                          <TableCell>{expense.expense_categories?.name || 'N/A'}</TableCell>
+                          <TableCell>{expense.description || 'N/A'}</TableCell>
+                          <TableCell>{expense.vendor_notes || 'N/A'}</TableCell>
+                          <TableCell>{expense.branches?.name || 'N/A'}</TableCell>
+                          <TableCell>{expense.users?.email || 'N/A'}</TableCell>
+                          <TableCell className="text-right font-extrabold text-lg">{formatCurrency(expense.amount)}</TableCell>
+                          <TableCell className="text-right flex space-x-2 justify-end">
+                            <Button variant="outline" size="sm" onClick={() => handleViewDetails(expense)} title="View Details">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => handleEditExpense(expense)} title="Edit Expense">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => openDeleteConfirmDialog(expense.id)} title="Delete Expense">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={9} className="h-24 text-center text-gray-500">
+                          No expense records found matching your criteria.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+            {!isFilterActive && (
+              <div className="px-6 pb-6">
+                <Pagination
+                  totalItems={totalItems}
+                  itemsPerPage={itemsPerPage}
+                  currentPage={currentPage}
+                  onPageChange={handlePageChange}
+                />
+              </div>
+            )}
+          </Card>
+        </section>
+      </div>
 
-      {/* View Details Dialog */}
+      {/* Dialogs */}
       <Dialog open={isViewDetailsDialogOpen} onOpenChange={setIsViewDetailsDialogOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
@@ -391,7 +384,6 @@ export default function ExpenseOverviewClient({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteConfirmDialogOpen} onOpenChange={setIsDeleteConfirmDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -411,7 +403,6 @@ export default function ExpenseOverviewClient({
         </DialogContent>
       </Dialog>
 
-      {/* Expense Management Actions Dialog (for Add/Edit functionality) */}
       <ExpenseManagementActions
         expenseToEdit={selectedExpenseForEdit}
         expenseCategories={initialExpenseCategories}
@@ -424,4 +415,4 @@ export default function ExpenseOverviewClient({
       />
     </div>
   );
-} 
+}  

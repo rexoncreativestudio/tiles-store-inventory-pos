@@ -48,6 +48,34 @@ const statusLabels = {
   pending_audit: "Pending Audit",
 };
 
+// Centralized action icons for easy refinement
+const actionIcons = {
+  view: {
+    icon: Eye,
+    color: "text-blue-600",
+    title: "View Details",
+    border: "hover:border-blue-500"
+  },
+  process: {
+    icon: Pencil,
+    color: "text-green-600",
+    title: "Process Audit",
+    border: "hover:border-green-500"
+  },
+  download: {
+    icon: Download,
+    color: "text-indigo-600",
+    title: "Download PDF",
+    border: "hover:border-indigo-500"
+  },
+  delete: {
+    icon: Trash2,
+    color: "text-red-600",
+    title: "Delete Submission",
+    border: "hover:border-red-500"
+  }
+};
+
 interface ManagerAuditTableProps {
   initialPendingAudits: PendingAuditRecordForManager[];
   totalItems: number;
@@ -108,8 +136,7 @@ export default function ManagerAuditTable({
     y += 8;
     doc.text(`Warehouse: ${audit.warehouses?.name ?? 'N/A'}`, 14, y);
     y += 8;
-    // Fix: Use branch name instead of location (location does not exist)
-    doc.text(`Branch: ${audit.warehouses?.branches?.name ?? 'N/A'}`, 14, y);
+    doc.text(`Location: ${audit.warehouses?.location ?? 'N/A'}`, 14, y);
     y += 8;
     doc.text(`Submission Date: ${audit.submission_date ? format(parseISO(audit.submission_date), 'PPP p') : 'N/A'}`, 14, y);
     y += 8;
@@ -158,7 +185,6 @@ export default function ManagerAuditTable({
       }
     });
 
-    // Footer
     doc.setFontSize(10);
     doc.text(`Generated: ${format(new Date(), 'PPP p')}`, 14, 286);
 
@@ -203,8 +229,58 @@ export default function ManagerAuditTable({
     router.push(`${window.location.pathname}?${params.toString()}`);
   };
 
-  const handleViewDetails = (audit: PendingAuditRecordForManager) => {
-    setSelectedAuditDetails(audit);
+  const fetchAuditDetails = async (auditId: string) => {
+    const { data, error } = await supabaseClient
+      .from("pending_stock_audits")
+      .select(`
+        id, submission_date, warehouse_id, recorded_by_controller_id, status, audit_date,
+        audited_by_manager_id, notes_from_manager, notes_from_controller, submission_details, created_at, updated_at,
+        warehouses(id, name, location),
+        recorded_by_controller_user:users!pending_stock_audits_recorded_by_controller_id_fkey(id, email),
+        audited_by_manager_user:users!pending_stock_audits_audited_by_manager_id_fkey(id, email)
+      `)
+      .eq("id", auditId)
+      .single();
+
+    if (error) {
+      toast.error("Failed to load updated submission details.");
+      return null;
+    }
+
+    let warehouse: WarehouseForManager | null = null;
+    if (data && data.warehouses) {
+      if (Array.isArray(data.warehouses)) {
+        warehouse = data.warehouses.length > 0 ? data.warehouses[0] : null;
+      } else {
+        warehouse = data.warehouses;
+      }
+    }
+
+    let recordedByControllerUser = null;
+    if (data && data.recorded_by_controller_user) {
+      recordedByControllerUser = Array.isArray(data.recorded_by_controller_user)
+        ? (data.recorded_by_controller_user.length > 0 ? data.recorded_by_controller_user[0] : null)
+        : data.recorded_by_controller_user;
+    }
+
+    let auditedByManagerUser = null;
+    if (data && data.audited_by_manager_user) {
+      auditedByManagerUser = Array.isArray(data.audited_by_manager_user)
+        ? (data.audited_by_manager_user.length > 0 ? data.audited_by_manager_user[0] : null)
+        : data.audited_by_manager_user;
+    }
+
+    return {
+      ...data,
+      warehouses: warehouse,
+      recorded_by_controller_user: recordedByControllerUser,
+      audited_by_manager_user: auditedByManagerUser,
+    } as PendingAuditRecordForManager;
+  };
+
+  const handleViewDetails = async (audit: PendingAuditRecordForManager) => {
+    const latestAudit = await fetchAuditDetails(audit.id);
+    setSelectedAuditDetails(latestAudit || audit);
     setIsViewDetailsDialogOpen(true);
   };
 
@@ -253,7 +329,7 @@ export default function ManagerAuditTable({
   // Responsive Table/Card UI
   return (
     <div className="space-y-6">
-      {/* Filters - full width container for buttons */}
+      {/* Filters */}
       <div className="flex flex-col md:flex-row md:items-end gap-4 mb-6 p-4 rounded-lg shadow-sm bg-white border w-full">
         <Select onValueChange={setWarehouseFilter} value={warehouseFilter}>
           <SelectTrigger className="w-full md:w-[220px]">
@@ -313,7 +389,7 @@ export default function ManagerAuditTable({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* MOBILE: Cards, DESKTOP: Table */}
+          {/* MOBILE: Cards */}
           <div className="block md:hidden space-y-4">
             {initialPendingAudits && initialPendingAudits.length > 0 ? (
               initialPendingAudits.map((audit) => (
@@ -337,48 +413,50 @@ export default function ManagerAuditTable({
                     Submission: {audit.submission_date ? format(parseISO(audit.submission_date), "PPP") : "N/A"}
                   </div>
                   <div className="flex justify-end gap-2 mt-2">
+                    {/* View Details */}
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
                       onClick={() => handleViewDetails(audit)}
-                      title="View Details"
-                      className="p-2"
+                      title={actionIcons.view.title}
+                      className={cn("p-2 border border-gray-200 transition", actionIcons.view.border)}
                     >
-                      <Eye className="h-4 w-4" />
+                      <Eye className={cn("h-5 w-5", actionIcons.view.color)} />
                     </Button>
+                    {/* Process Audit */}
                     {audit.status === "pending_audit" && (
                       <Button
-                        variant="default"
+                        variant="ghost"
                         size="icon"
                         onClick={() => handleProcessAudit(audit)}
-                        title="Process Audit"
-                        className="p-2"
+                        title={actionIcons.process.title}
+                        className={cn("p-2 border border-gray-200 transition", actionIcons.process.border)}
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil className={cn("h-5 w-5", actionIcons.process.color)} />
                       </Button>
                     )}
+                    {/* Download PDF */}
                     {audit.status === "approved" && (
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDownloadPDF(audit)}
-                        title="Download PDF"
-                        className="p-2"
+                        title={actionIcons.download.title}
+                        className={cn("p-2 border border-gray-200 transition", actionIcons.download.border)}
                       >
-                        <Download className="h-4 w-4" />
+                        <Download className={cn("h-5 w-5", actionIcons.download.color)} />
                       </Button>
                     )}
-                    {audit.status !== "approved" && (
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => openDeleteConfirmDialog(audit.id)}
-                        title="Delete Submission"
-                        className="p-2"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
+                    {/* Delete Submission */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openDeleteConfirmDialog(audit.id)}
+                      title={actionIcons.delete.title}
+                      className={cn("p-2 border border-gray-200 transition", actionIcons.delete.border)}
+                    >
+                      <Trash2 className={cn("h-5 w-5", actionIcons.delete.color)} />
+                    </Button>
                   </div>
                 </div>
               ))
@@ -399,7 +477,7 @@ export default function ManagerAuditTable({
                   <TableHead className="w-[10%]">Status</TableHead>
                   <TableHead className="w-[10%]">Audit Date</TableHead>
                   <TableHead className="w-[10%]">Audited By</TableHead>
-                  <TableHead className="w-[13%] text-right">Actions</TableHead>
+                  <TableHead className="w-[16%] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -435,49 +513,50 @@ export default function ManagerAuditTable({
                         {audit.audited_by_manager_user?.email || "N/A"}
                       </TableCell>
                       <TableCell className="text-right flex space-x-2 justify-end">
+                        {/* View Details */}
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="icon"
                           onClick={() => handleViewDetails(audit)}
-                          title="View Details"
-                          className="p-2"
+                          title={actionIcons.view.title}
+                          className={cn("p-2 border border-gray-200 transition", actionIcons.view.border)}
                         >
-                          <Eye className="h-4 w-4" />
+                          <Eye className={cn("h-5 w-5", actionIcons.view.color)} />
                         </Button>
+                        {/* Process Audit */}
                         {audit.status === "pending_audit" && (
                           <Button
-                            variant="default"
+                            variant="ghost"
                             size="icon"
                             onClick={() => handleProcessAudit(audit)}
-                            title="Process Audit"
-                            className="p-2"
+                            title={actionIcons.process.title}
+                            className={cn("p-2 border border-gray-200 transition", actionIcons.process.border)}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Pencil className={cn("h-5 w-5", actionIcons.process.color)} />
                           </Button>
                         )}
+                        {/* Download PDF */}
                         {audit.status === "approved" && (
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => handleDownloadPDF(audit)}
-                            title="Download PDF"
-                            className="ml-2"
+                            title={actionIcons.download.title}
+                            className={cn("p-2 border border-gray-200 transition", actionIcons.download.border)}
                           >
-                            <Download className="h-4 w-4" />
-                            <span className="sr-only">Download PDF</span>
+                            <Download className={cn("h-5 w-5", actionIcons.download.color)} />
                           </Button>
                         )}
-                        {audit.status !== "approved" && (
-                          <Button
-                            variant="destructive"
-                            size="icon"
-                            onClick={() => openDeleteConfirmDialog(audit.id)}
-                            title="Delete Submission"
-                            className="p-2"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
+                        {/* Delete Submission */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openDeleteConfirmDialog(audit.id)}
+                          title={actionIcons.delete.title}
+                          className={cn("p-2 border border-gray-200 transition", actionIcons.delete.border)}
+                        >
+                          <Trash2 className={cn("h-5 w-5", actionIcons.delete.color)} />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -526,8 +605,8 @@ export default function ManagerAuditTable({
                 {selectedAuditDetails.warehouses?.name || "N/A"}
               </p>
               <p>
-                <strong>Branch:</strong>{" "}
-                {selectedAuditDetails.warehouses?.branches?.name || "N/A"}
+                <strong>Location:</strong>{" "}
+                {selectedAuditDetails.warehouses?.location || "N/A"}
               </p>
               <p>
                 <strong>Status:</strong>{" "}
@@ -650,4 +729,4 @@ export default function ManagerAuditTable({
       />
     </div>
   );
-} 
+}    

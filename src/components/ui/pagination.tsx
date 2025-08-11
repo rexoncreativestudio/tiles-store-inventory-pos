@@ -103,11 +103,11 @@ export default function Pagination({
         <div className="flex space-x-1">
           {paginationRange.map((page, index) => {
             if (page === '...') {
-              return <span key={index} className="px-2 py-1 text-sm">...</span>;
+              return <span key={`dots-${index}`} className="px-2 py-1 text-sm">...</span>;
             }
             return (
               <Button
-                key={page}
+                key={`page-${page}-${index}`}
                 variant={currentPage === page ? "default" : "outline"}
                 size="sm"
                 onClick={() => onPageChange(Number(page))}
@@ -129,4 +129,4 @@ export default function Pagination({
       </div>
     </div>
   );
-}
+}   

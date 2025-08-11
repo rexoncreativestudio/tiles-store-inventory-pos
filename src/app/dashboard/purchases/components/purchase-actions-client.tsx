@@ -44,7 +44,6 @@ const purchaseItemFormSchema = z.object({
   note: z.string().nullable(),
 });
 
-// UPDATED: Use regex for warehouse_id instead of .uuid()
 const purchaseFormSchema = z.object({
   purchase_date: z.string().min(1, { message: "Purchase date is required." }),
   warehouse_id: z.string().regex(
@@ -74,6 +73,7 @@ type PurchaseRecordForEdit = {
 
 interface PurchaseManagementActionsProps {
   purchaseToEdit?: PurchaseRecordForEdit;
+  editId?: string;
   products?: ProductForPurchaseItem[];
   warehouses?: WarehouseForFilter[];
   currentUserId: string;
@@ -137,6 +137,7 @@ function getDefaultFormValues(purchaseToEdit?: PurchaseRecordForEdit): PurchaseF
 
 export default function PurchaseManagementActions({
   purchaseToEdit,
+  editId,
   products = [],
   warehouses = [],
   currentUserId,
@@ -147,47 +148,28 @@ export default function PurchaseManagementActions({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [productSearch, setProductSearch] = useState("");
+
   const form = useForm<PurchaseFormValues>({
     resolver: zodResolver(purchaseFormSchema),
     defaultValues: getDefaultFormValues(purchaseToEdit),
     mode: "onChange",
   });
 
-  // ======= DEBUG LOGS =======
-  const watchedWarehouseId = form.watch("warehouse_id");
+  // FIX: add form to dependency array for proper effect handling and avoid stale form
   useEffect(() => {
-    const id = watchedWarehouseId;
-    // Show any extra spaces
-    console.log(
-      "Selected warehouse_id:",
-      `"${id}"`,
-      "Length:",
-      id.length,
-      "Trimmed length:",
-      id.trim().length,
-      "Is trimmed equal to original:",
-      id.trim() === id,
-      "Has leading/trailing spaces:",
-      id !== id.trim()
-    );
-  }, [watchedWarehouseId]);
-  // Log the warehouse data at mount
-  useEffect(() => {
-    console.log("Warehouses array:", warehouses);
-  }, [warehouses]);
-  // ==========================
+    if (purchaseToEdit && editId) {
+      form.reset(getDefaultFormValues(purchaseToEdit));
+      setIsDialogOpen(true);
+    } else {
+      setIsDialogOpen(false);
+    }
+  }, [purchaseToEdit, editId, form]);
 
   const { fields: itemFields, append: appendItem, remove: removeItem } = useFieldArray({
     control: form.control,
     name: "items",
   });
-
-  useEffect(() => {
-    if (purchaseToEdit) {
-      form.reset(getDefaultFormValues(purchaseToEdit));
-      setIsDialogOpen(true);
-    }
-  }, [purchaseToEdit, form]);
 
   const handleOpenAdd = () => {
     form.reset(getDefaultFormValues(undefined));
@@ -207,6 +189,7 @@ export default function PurchaseManagementActions({
     if (selectedProduct?.purchase_price !== undefined) {
       form.setValue(`items.${index}.unit_purchase_price`, Number(selectedProduct.purchase_price));
     }
+    setProductSearch(""); // reset search after select
   };
 
   const onSubmit: SubmitHandler<PurchaseFormValues> = async (values) => {
@@ -227,7 +210,7 @@ export default function PurchaseManagementActions({
     }
 
     if (purchaseToEdit) {
-      // Update logic (if you want to also update stock for edit, you can implement similar adjustments here)
+      // Update logic
       const { error: dbError } = await supabaseClient
         .from("purchases")
         .update({
@@ -254,9 +237,6 @@ export default function PurchaseManagementActions({
             }))
           );
         error = insertItemsError;
-
-        // TODO: You may want to handle stock adjustment for edits (reverse previous and apply new).
-        // For now, we'll only handle new purchase stock updates below.
       }
     } else {
       // --- NEW PURCHASE: record purchase, then purchase_items, then adjust stock ---
@@ -287,7 +267,6 @@ export default function PurchaseManagementActions({
           );
         error = itemsError;
 
-        // --- ADJUST STOCK for each item ---
         if (!error) {
           const stockAdjustmentPromises = values.items.map(async (item) => {
             const { error: adjustError } = await supabaseClient.rpc('adjust_stock_quantity', {
@@ -299,7 +278,6 @@ export default function PurchaseManagementActions({
             });
             if (adjustError) {
               console.error(`Error adjusting stock for product ${item.product_id}:`, adjustError.message);
-              // Log and proceed for now.
             }
           });
           await Promise.all(stockAdjustmentPromises);
@@ -440,7 +418,6 @@ export default function PurchaseManagementActions({
                   key={item.id}
                   className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end border p-4 rounded-md bg-gray-50"
                 >
-                  {/* Product Select with search and scrollable dropdown, fixed width for text overflow */}
                   <div className="col-span-full md:col-span-2 flex flex-col gap-2 min-w-0">
                     <label htmlFor={`items.${index}.product_id`} className="font-medium">
                       Product
@@ -479,21 +456,32 @@ export default function PurchaseManagementActions({
                             align="start"
                           >
                             <Command>
-                              <CommandInput placeholder="Search product..." />
+                              <CommandInput
+                                placeholder="Search product..."
+                                value={productSearch}
+                                onValueChange={setProductSearch}
+                                autoFocus
+                              />
                               <CommandEmpty>No products found.</CommandEmpty>
                               <CommandGroup>
-                                {(products ?? []).map((product) => (
-                                  <CommandItem
-                                    key={product.id}
-                                    value={product.id}
-                                    onSelect={() => handleProductSelect(product.id, index)}
-                                    className="truncate"
-                                  >
-                                    <span className="truncate">
-                                      {product.name} ({product.unique_reference})
-                                    </span>
-                                  </CommandItem>
-                                ))}
+                                {(products ?? [])
+                                  .filter(
+                                    (product) =>
+                                      product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                                      product.unique_reference.toLowerCase().includes(productSearch.toLowerCase())
+                                  )
+                                  .map((product) => (
+                                    <CommandItem
+                                      key={product.id}
+                                      value={product.id}
+                                      onSelect={() => handleProductSelect(product.id, index)}
+                                      className="truncate"
+                                    >
+                                      <span className="truncate">
+                                        {product.name} ({product.unique_reference})
+                                      </span>
+                                    </CommandItem>
+                                  ))}
                               </CommandGroup>
                             </Command>
                           </PopoverContent>
@@ -506,7 +494,6 @@ export default function PurchaseManagementActions({
                       </p>
                     )}
                   </div>
-                  {/* Quantity Field */}
                   <div className="flex flex-col gap-2 min-w-0">
                     <label htmlFor={`items.${index}.quantity`} className="font-medium">
                       Qty
@@ -527,7 +514,6 @@ export default function PurchaseManagementActions({
                       </p>
                     )}
                   </div>
-                  {/* Purchase Price Field */}
                   <div className="flex flex-col gap-2 min-w-0">
                     <label htmlFor={`items.${index}.unit_purchase_price`} className="font-medium">
                       Purchase Price
@@ -548,7 +534,6 @@ export default function PurchaseManagementActions({
                       </p>
                     )}
                   </div>
-                  {/* Line Total */}
                   <div className="flex flex-col items-end min-w-0">
                     <label className="font-medium">Line Total</label>
                     <p className="font-medium whitespace-nowrap">
@@ -558,7 +543,6 @@ export default function PurchaseManagementActions({
                       )}
                     </p>
                   </div>
-                  {/* Remove Item */}
                   {itemFields.length > 1 && (
                     <Button
                       type="button"
@@ -611,4 +595,4 @@ export default function PurchaseManagementActions({
       </Dialog>
     </>
   );
-}
+}  

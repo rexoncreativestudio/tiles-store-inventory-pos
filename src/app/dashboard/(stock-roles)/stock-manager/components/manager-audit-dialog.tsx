@@ -12,10 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// import { Textarea } from "@/components/ui/textarea"; // Removed as per request
 import { toast } from "sonner";
 import { supabaseClient } from "@/lib/supabase/client";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { useForm, SubmitHandler, useFieldArray, Controller, FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parseISO } from "date-fns";
@@ -66,22 +65,25 @@ export default function ManagerAuditDialog({
     defaultValues: {
       audit_id: auditToProcess?.id || "",
       status: "approved",
-      // manager_notes: "", // Removed as per request
       audited_products: [],
     },
   });
 
-  const { fields } = useFieldArray<ManagerAuditFormValues, "audited_products">({
+  // Add remove functionality to audited_products
+  const { fields, remove } = useFieldArray<ManagerAuditFormValues, "audited_products">({
     control: form.control,
     name: "audited_products",
   });
 
+  // Track if there are unsaved changes by comparing form fields to auditToProcess.submission_details
+  const [isDirty, setIsDirty] = useState(false);
+
   useEffect(() => {
     if (isOpen && auditToProcess) {
+      // Reset form every time modal opens to original audit data
       form.reset({
         audit_id: auditToProcess.id,
         status: auditToProcess.status === "rejected" ? "rejected" : "approved",
-        // manager_notes: auditToProcess.notes_from_manager || "", // Removed as per request
         audited_products: auditToProcess.submission_details.map((item) => ({
           product_name: item.product_name,
           product_ref: item.product_ref,
@@ -93,17 +95,77 @@ export default function ManagerAuditDialog({
         })),
       });
       form.clearErrors();
+      setIsDirty(false);
     }
-  }, [isOpen, auditToProcess, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, auditToProcess]);
+
+  // Detect unsaved changes for warning prompt
+  useEffect(() => {
+    if (!auditToProcess) {
+      setIsDirty(false);
+      return;
+    }
+    const currentProducts = form.watch("audited_products");
+    const initialProducts = auditToProcess.submission_details.map((item) => ({
+      product_name: item.product_name,
+      product_ref: item.product_ref,
+      quantity: item.quantity,
+      product_unit_abbreviation: item.product_unit_abbreviation || null,
+      category_id: item.category_id || null,
+      purchase_price: item.purchase_price ?? null,
+      sale_price: item.sale_price ?? null,
+    }));
+    // Simple dirty check: number of products or any field differs
+    if (
+      currentProducts.length !== initialProducts.length ||
+      currentProducts.some((prod, idx) => {
+        const initial = initialProducts[idx];
+        return (
+          prod.product_name !== initial.product_name ||
+          prod.product_ref !== initial.product_ref ||
+          prod.quantity !== initial.quantity ||
+          prod.product_unit_abbreviation !== initial.product_unit_abbreviation ||
+          prod.category_id !== initial.category_id ||
+          prod.purchase_price !== initial.purchase_price ||
+          prod.sale_price !== initial.sale_price
+        );
+      })
+    ) {
+      setIsDirty(true);
+    } else {
+      setIsDirty(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.watch("audited_products"), form.watch("status")]);
+
+  const handleClose = () => {
+    if (isDirty) {
+      if (
+        !window.confirm(
+          "You have unsaved changes. Are you sure you want to close? All edits will be lost."
+        )
+      ) {
+        return;
+      }
+    }
+    onClose();
+  };
 
   const onSubmit: SubmitHandler<ManagerAuditFormValues> = async (values) => {
-    console.log("✅ Form validation successful. Attempting to submit to the database with these values:", values);
     setIsLoading(true);
 
     const cleanedAuditedProducts = values.audited_products.map(product => ({
       ...product,
       category_id: product.category_id === '' ? null : product.category_id,
     }));
+
+    // Prevent submit if no products left
+    if (cleanedAuditedProducts.length === 0) {
+      toast.error("Cannot submit: At least one product is required.");
+      setIsLoading(false);
+      return;
+    }
 
     const { data: rpcResponse, error: rpcError } = await supabaseClient.rpc("process_stock_audit", {
       p_audit_id: values.audit_id,
@@ -115,12 +177,10 @@ export default function ManagerAuditDialog({
     });
 
     if (rpcError) {
-      console.error("System RPC Error:", rpcError);
       toast.error(`A system error occurred: ${rpcError.message}`, {
         description: "Please check the browser console and Supabase logs for details.",
       });
     } else if (rpcResponse && rpcResponse.status === 'error') {
-      console.error("Functional DB Error:", rpcResponse.message);
       toast.error("The audit process failed in the database.", {
         description: rpcResponse.message,
       });
@@ -132,7 +192,6 @@ export default function ManagerAuditDialog({
   };
 
   const onInvalid = (errors: FieldErrors<ManagerAuditFormValues>) => {
-    console.error("❌ Form validation failed. The onSubmit function was not called. Errors:", errors);
     const errorMessage = errors.audited_products?.message || "Please check the form for errors and try again.";
     toast.error("Validation Failed", {
       description: errorMessage,
@@ -142,9 +201,9 @@ export default function ManagerAuditDialog({
   const isApprovedStatus = form.watch("status") === "approved";
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto p-6"> {/* Added padding */}
-        <DialogHeader className="mb-4"> {/* Added margin-bottom */}
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+        <DialogHeader className="mb-4">
           <DialogTitle className="text-2xl font-bold text-center">Audit Stock Submission</DialogTitle>
           <DialogDescription className="text-center text-gray-600">
             Review and approve/reject stock submitted by the controller.
@@ -156,14 +215,26 @@ export default function ManagerAuditDialog({
           <div className="bg-gray-50 p-4 rounded-lg shadow-sm">
             <h3 className="text-lg font-semibold mb-3 text-gray-800">Submission Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <p><strong>Submission Date:</strong> <span className="text-gray-700">{formatDateDisplay(auditToProcess?.submission_date || null)}</span></p>
-              <p><strong>Warehouse:</strong> <span className="text-gray-700">{auditToProcess?.warehouses?.name || "N/A"}</span></p>
-              <p><strong>Recorded By:</strong> <span className="text-gray-700">{auditToProcess?.recorded_by_controller_user?.email || "N/A"}</span></p>
-              <p><strong>Controller Notes:</strong> <span className="text-gray-700">{auditToProcess?.notes_from_controller || "N/A"}</span></p>
+              <p>
+                <strong>Submission Date:</strong>{" "}
+                <span className="text-gray-700">{formatDateDisplay(auditToProcess?.submission_date || null)}</span>
+              </p>
+              <p>
+                <strong>Warehouse:</strong>{" "}
+                <span className="text-gray-700">{auditToProcess?.warehouses?.name || "N/A"}</span>
+              </p>
+              <p>
+                <strong>Recorded By:</strong>{" "}
+                <span className="text-gray-700">{auditToProcess?.recorded_by_controller_user?.email || "N/A"}</span>
+              </p>
+              <p>
+                <strong>Controller Notes:</strong>{" "}
+                <span className="text-gray-700">{auditToProcess?.notes_from_controller || "N/A"}</span>
+              </p>
             </div>
           </div>
 
-          <Separator className="my-4" /> {/* Increased margin */}
+          <Separator className="my-4" />
 
           {/* Audit Status Section */}
           <div className="grid gap-2">
@@ -173,7 +244,7 @@ export default function ManagerAuditDialog({
               name="status"
               render={({ field }) => (
                 <Select onValueChange={field.onChange} value={field.value} disabled={isLoading}>
-                  <SelectTrigger id="status" className="w-full md:w-1/2 lg:w-1/3"> {/* Responsive width */}
+                  <SelectTrigger id="status" className="w-full md:w-1/2 lg:w-1/3">
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -183,10 +254,14 @@ export default function ManagerAuditDialog({
                 </Select>
               )}
             />
-            {form.formState.errors.status && (<p className="text-red-500 text-sm mt-1">{form.formState.errors.status.message}</p>)}
+            {form.formState.errors.status && (
+              <p className="text-red-500 text-sm mt-1">
+                {form.formState.errors.status.message}
+              </p>
+            )}
           </div>
 
-          <Separator className="my-4" /> {/* Increased margin */}
+          <Separator className="my-4" />
 
           {/* Products for Audit Section */}
           <h3 className="text-xl font-bold text-gray-800">Products for Audit</h3>
@@ -200,7 +275,7 @@ export default function ManagerAuditDialog({
           <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
             {fields.length > 0 ? (
               fields.map((field, index) => (
-                <Card key={field.id ?? index} className="border border-gray-200 shadow-sm rounded-lg">
+                <Card key={field.id ?? index} className="border border-gray-200 shadow-sm rounded-lg relative">
                   <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
                     {/* Product Name (editable) */}
                     <div className="col-span-full lg:col-span-2 grid gap-1">
@@ -218,7 +293,11 @@ export default function ManagerAuditDialog({
                           />
                         )}
                       />
-                      {form.formState.errors.audited_products?.[index]?.product_name && (<p className="text-red-500 text-xs mt-1">{form.formState.errors.audited_products[index]?.product_name?.message}</p>)}
+                      {form.formState.errors.audited_products?.[index]?.product_name && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {form.formState.errors.audited_products[index]?.product_name?.message}
+                        </p>
+                      )}
                     </div>
 
                     {/* Product Reference (editable) */}
@@ -237,7 +316,11 @@ export default function ManagerAuditDialog({
                           />
                         )}
                       />
-                      {form.formState.errors.audited_products?.[index]?.product_ref && (<p className="text-red-500 text-xs mt-1">{form.formState.errors.audited_products[index]?.product_ref?.message}</p>)}
+                      {form.formState.errors.audited_products?.[index]?.product_ref && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {form.formState.errors.audited_products[index]?.product_ref?.message}
+                        </p>
+                      )}
                     </div>
 
                     {/* Quantity (editable) */}
@@ -257,7 +340,11 @@ export default function ManagerAuditDialog({
                           />
                         )}
                       />
-                      {form.formState.errors.audited_products?.[index]?.quantity && (<p className="text-red-500 text-xs mt-1">{form.formState.errors.audited_products[index]?.quantity?.message}</p>)}
+                      {form.formState.errors.audited_products?.[index]?.quantity && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {form.formState.errors.audited_products[index]?.quantity?.message}
+                        </p>
+                      )}
                     </div>
 
                     {/* Purchase Price (existing editable) */}
@@ -277,7 +364,11 @@ export default function ManagerAuditDialog({
                           />
                         )}
                       />
-                      {form.formState.errors.audited_products?.[index]?.purchase_price && (<p className="text-red-500 text-xs mt-1">{form.formState.errors.audited_products[index]?.purchase_price?.message}</p>)}
+                      {form.formState.errors.audited_products?.[index]?.purchase_price && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {form.formState.errors.audited_products[index]?.purchase_price?.message}
+                        </p>
+                      )}
                     </div>
 
                     {/* Sale Price (existing editable) */}
@@ -297,8 +388,27 @@ export default function ManagerAuditDialog({
                           />
                         )}
                       />
-                      {form.formState.errors.audited_products?.[index]?.sale_price && (<p className="text-red-500 text-xs mt-1">{form.formState.errors.audited_products[index]?.sale_price?.message}</p>)}
+                      {form.formState.errors.audited_products?.[index]?.sale_price && (
+                        <p className="text-red-500 text-xs mt-1">
+                          {form.formState.errors.audited_products[index]?.sale_price?.message}
+                        </p>
+                      )}
                     </div>
+
+                    {/* Remove Button */}
+                    {isApprovedStatus && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-2 right-2 z-10"
+                        onClick={() => remove(index)}
+                        disabled={isLoading}
+                        title="Remove Item"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))
@@ -307,8 +417,8 @@ export default function ManagerAuditDialog({
             )}
           </div>
 
-          <DialogFooter className="mt-6 flex justify-end space-x-2"> {/* Added margin-top and spacing */}
-            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button>
+          <DialogFooter className="mt-6 flex justify-end space-x-2">
+            <Button type="button" variant="outline" onClick={handleClose} disabled={isLoading}>Cancel</Button>
             <Button type="submit" disabled={isLoading}>
               {isLoading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</>) : isApprovedStatus ? ("Approve Audit") : ("Reject Audit")}
             </Button>
@@ -316,6 +426,5 @@ export default function ManagerAuditDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
+  );   
 }
- 

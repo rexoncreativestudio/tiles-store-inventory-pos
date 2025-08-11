@@ -233,4 +233,4 @@ export type ExpenseRecordForPos = {
 export type BranchForFilter = {
   id: string;
   name: string;
-};
+};   

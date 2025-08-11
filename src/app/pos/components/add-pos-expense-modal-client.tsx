@@ -20,6 +20,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { supabaseClient } from "@/lib/supabase/client";
 
 // Types
 type ExpenseCategoryForPos = {
@@ -118,42 +119,51 @@ export default function AddPosExpenseModalClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, miscellaneousCategoryId, canSelectBranch, currentUserBranchId, isCashier]);
 
-  // Simulate/create new expense for table (normally API call)
+  // Insert expense into database
   const handleSubmit: SubmitHandler<ExpenseFormValues> = async (values) => {
     setIsSubmitting(true);
 
     try {
-      // Simulate: get category and branch objects by id
-      const catObj = expenseCategories.find((c) => c.id === values.expense_category_id) ?? undefined;
-      const branchObj = branches.find((b) => b.id === values.branch_id) ?? undefined;
-
-      // Always use ISO string for date
-      const isoDate = values.date instanceof Date ? values.date.toISOString() : values.date;
-
-      // Simulate an ID and created_at, you should replace this with your API!
-      const now = new Date().toISOString();
-      const newExpense: ExpenseRecordForPos = {
-        id: Math.random().toString(36).slice(2),
-        date: isoDate,
+      const payload = {
+        date: values.date.toISOString(),
         expense_category_id: values.expense_category_id,
-        description: null,
         amount: values.amount,
-        vendor_notes: values.vendor_notes || "",
+        vendor_notes: values.vendor_notes || null,
         branch_id: values.branch_id,
         recorded_by_user_id: currentCashierId,
-        created_at: now,
-        updated_at: now,
-        expense_categories: catObj
-          ? { id: catObj.id, name: catObj.name }
-          : null,
-        branches: branchObj
-          ? { id: branchObj.id, name: branchObj.name }
-          : null,
-        users: { id: currentCashierId, email: "" },
+        // description: null, // Not in form but can be added if you want
+      };
+
+      // Insert into Supabase
+      const { data, error } = await supabaseClient
+        .from("expenses")
+        .insert([payload])
+        .select(
+          `id, date, expense_category_id, description, amount, vendor_notes, branch_id, recorded_by_user_id, created_at, updated_at,
+          expense_categories(id, name), branches(id, name), users(id, email)`
+        )
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      // Fix: Unwrap relationship arrays if present
+      const formattedData: ExpenseRecordForPos = {
+        ...data,
+        expense_categories: Array.isArray(data.expense_categories)
+          ? data.expense_categories[0]
+          : data.expense_categories,
+        branches: Array.isArray(data.branches)
+          ? data.branches[0]
+          : data.branches,
+        users: Array.isArray(data.users)
+          ? data.users[0]
+          : data.users,
       };
 
       toast.success("Expense recorded successfully!");
-      onExpenseSubmitted(newExpense); // Push to parent for live update
+      onExpenseSubmitted(formattedData);
       onClose();
     } catch {
       toast.error("Failed to record expense.");
@@ -327,5 +337,5 @@ export default function AddPosExpenseModalClient({
         </form>
       </DialogContent>
     </Dialog>
-  ); 
-} 
+  );
+}   

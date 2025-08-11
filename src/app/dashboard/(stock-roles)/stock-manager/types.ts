@@ -6,8 +6,7 @@ export type WarehouseForManager = {
   id: string;
   name: string;
   location: string | null;
-  branch_id: string | null;
-  branches?: { id: string; name: string } | null;
+  // Removed branch_id and branches; your table does not have those fields
 };
 
 export type UserForManager = {
@@ -54,8 +53,7 @@ export type PendingAuditRecordForManager = {
   warehouses: {
     id: string;
     name: string;
-    branch_id: string | null;
-    branches: { id: string; name: string } | null;
+    location: string | null;
   } | null;
   recorded_by_controller_user: { id: string; email: string } | null;
   audited_by_manager_user?: { id: string; email: string } | null;

@@ -18,11 +18,13 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { Eye, Pencil, Printer } from 'lucide-react';
+import { Eye, Pencil, Printer, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import SaleEditModalClient from './components/sale-edit-modal-client';
 import ExternalSaleEditModalClient from './components/external-sale-edit-modal-client';
 import { useCurrencyFormatter } from '@/lib/formatters';
+import { supabaseClient } from '@/lib/supabase/client';
+import { toast } from "sonner";
 
 import type {
   SaleRecord,
@@ -57,6 +59,8 @@ export default function SaleTableRowClient({
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isExternalEditDialogOpen, setIsExternalEditDialogOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
 
   const isRegularSale = 'sale_items' in sale;
   const saleItems = isRegularSale ? (sale as SaleRecord).sale_items : [];
@@ -74,13 +78,13 @@ export default function SaleTableRowClient({
     setIsEditDialogOpen(false);
     setIsExternalEditDialogOpen(false);
   };
- const reprintReceipt = () => {
-  if (isRegularSale) {
-    router.push(`/receipt/${sale.transaction_reference}`);
-  } else {
-    router.push(`/receipt/external/${sale.transaction_reference}`);
-  }
-};
+  const reprintReceipt = () => {
+    if (isRegularSale) {
+      router.push(`/receipt/${sale.transaction_reference}`);
+    } else {
+      router.push(`/receipt/external/${sale.transaction_reference}`);
+    }
+  };
 
   // External sales: Check if completed or held and any item has unit_purchase_price_negotiated === 0
   const hasZeroPurchasePrice =
@@ -105,22 +109,56 @@ export default function SaleTableRowClient({
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
   });
 
-  // Branch/Employee logic
-  const branchEmployee =
-    sale.branches?.name
-      ? sale.branches.name +
-        (sale.users?.email ? ` / ${sale.users.email}` : '')
-      : sale.users?.email || 'N/A';
+  // Branch logic (just branch name, no employee)
+  const branchName = sale.branches?.name || 'N/A';
 
   // Sale Type logic
   const saleType = isRegularSale ? 'Regular' : 'External';
+
+  // Cancel Sale Handler (uses in-app modal dialog for confirmation)
+  const openCancelDialog = () => setIsCancelDialogOpen(true);
+  const closeCancelDialog = () => setIsCancelDialogOpen(false);
+
+  const handleCancelSale = async () => {
+    setIsCancelling(true);
+
+    // Clean IDs in case they're wrapped in braces
+    const cleanSaleId = typeof sale.id === "string" ? sale.id.replace(/[{}]/g, "") : sale.id;
+    const cleanUserId = typeof currentUserId === "string" ? currentUserId.replace(/[{}]/g, "") : currentUserId;
+
+    const rpcFunc = isRegularSale ? "cancel_regular_sale" : "cancel_external_sale";
+    const params = isRegularSale
+      ? { p_sale_id: cleanSaleId, p_user_id: cleanUserId }
+      : { p_external_sale_id: cleanSaleId };
+
+    // Log parameters before calling RPC
+    console.log("Attempting to cancel sale:", { rpcFunc, params });
+
+    const { data, error } = await supabaseClient.rpc(rpcFunc, params);
+
+    // Log the RPC result for debugging
+    console.log("Cancel result:", { data, error });
+
+    setIsCancelling(false);
+    setIsCancelDialogOpen(false);
+
+    // Feedback via toast
+    if (error) {
+      toast.error("Error cancelling sale: " + error.message);
+    } else if (data?.status === "success") {
+      toast.success("Sale cancelled successfully!");
+      router.refresh();
+    } else {
+      toast.error(data?.message || "Unknown error occurred during cancellation.");
+    }
+  };
 
   return (
     <TableRow key={sale.id}>
       <TableCell>{idx + 1}</TableCell>
       <TableCell>{formattedSaleDate}</TableCell>
       <TableCell className="font-medium">{sale.transaction_reference}</TableCell>
-      <TableCell>{branchEmployee}</TableCell>
+      <TableCell>{branchName}</TableCell>
       <TableCell>{saleType}</TableCell>
       <TableCell>{sale.customer_name || 'N/A'}</TableCell>
       <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
@@ -148,6 +186,48 @@ export default function SaleTableRowClient({
           <Button variant="outline" size="sm" onClick={reprintReceipt} title="Reprint Receipt">
             <Printer className="h-4 w-4" />
           </Button>
+          {/* Cancel Sale Button - only if not already cancelled */}
+          {sale.status !== 'cancelled' && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openCancelDialog}
+                title="Cancel Sale"
+                className="text-red-600"
+                disabled={isCancelling}
+              >
+                <XCircle className="h-4 w-4" />
+                <span className="sr-only">Cancel Sale</span>
+              </Button>
+              <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Cancel Sale</DialogTitle>
+                    <DialogDescription>
+                      Are you sure you want to cancel this sale? This will reverse the stock, delete the sale and its payment receipt. This action cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={closeCancelDialog}
+                      disabled={isCancelling}
+                    >
+                      No, Keep Sale
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleCancelSale}
+                      disabled={isCancelling}
+                    >
+                      Yes, Cancel Sale
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
         </div>
       </TableCell>
 
@@ -162,7 +242,7 @@ export default function SaleTableRowClient({
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 text-sm mt-4">
             <div>
-              <p><span className="font-semibold">Branch/Employee:</span> {branchEmployee}</p>
+              <p><span className="font-semibold">Branch:</span> {branchName}</p>
               <p><span className="font-semibold">Customer:</span> {sale.customer_name || 'Walk-in'}</p>
               <p><span className="font-semibold">Customer Phone:</span> {sale.customer_phone || 'N/A'}</p>
               <p><span className="font-semibold">Sale Type:</span> {saleType}</p>
@@ -281,4 +361,4 @@ export default function SaleTableRowClient({
       )}
     </TableRow>
   );
-}
+}  

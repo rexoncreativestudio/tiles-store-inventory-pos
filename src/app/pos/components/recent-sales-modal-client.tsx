@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription,
@@ -12,8 +12,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import { useRouter } from 'next/navigation';
-import { Printer, Eye, Loader2, CalendarIcon, ShoppingCart, ExternalLink } from 'lucide-react';
-import { format, parseISO, isWithinInterval } from 'date-fns';
+import { Printer, Eye, Loader2, CalendarIcon, ShoppingCart, ExternalLink, Edit2 } from 'lucide-react';
+import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
   Popover, PopoverContent, PopoverTrigger
@@ -27,58 +27,27 @@ import {
   Card, CardContent, CardTitle, CardHeader
 } from "@/components/ui/card";
 import { supabaseClient } from "@/lib/supabase/client";
+import type { SaleRecordForRecentSales, BranchForFilter, SaleItemDetailsForRecentSales } from "../types";
 
 // --- Type Definitions ---
-type SaleItemDetailsForRecentSales = {
-  id: string;
-  product_id?: string;
-  quantity: number;
-  unit_sale_price: number;
-  total_price: number;
-  note: string | null;
-  products?: {
-    id: string;
-    name: string;
-    unique_reference: string;
-    product_unit_abbreviation: string | null;
-    purchase_price?: number;
-  } | null;
-  product_name?: string;
-  product_category_name?: string;
-  product_unit_name?: string;
-  unit_purchase_price_negotiated?: number;
-  total_cost?: number;
-};
-
-type UserForSelect = {
-  id: string;
-  email: string;
-};
-
-type SaleRecordForRecentSales = {
-  id: string;
-  sale_date: string;
-  cashier_id: string;
-  branch_id: string;
+type EditSaleFields = {
   customer_name: string;
   customer_phone: string | null;
-  total_amount: number;
-  payment_method: string;
-  status: 'completed' | 'held';
-  transaction_reference: string;
-  created_at: string;
-  updated_at: string;
-  users: {
+  sale_items: {
     id: string;
-    email: string;
-    role?: string;
-  } | null;
-  branches: {
-    id: string;
-    name: string;
-  } | null;
-  sale_items: SaleItemDetailsForRecentSales[];
-  saleType: "Sale" | "External Sale";
+    quantity: number;
+    unit_sale_price: number;
+    note: string | null;
+    product_name?: string; // for external sales
+  }[];
+};
+
+type EditSaleState = {
+  open: boolean;
+  sale: SaleRecordForRecentSales | null;
+  editedFields: EditSaleFields | null;
+  saving: boolean;
+  error: string | null;
 };
 
 interface RecentSalesModalClientProps {
@@ -87,6 +56,8 @@ interface RecentSalesModalClientProps {
   onClose: () => void;
   currentCashierId: string;
   currentUserRole: string;
+  currentUserBranchId: string;
+  branches: BranchForFilter[];
 }
 
 // Helper: Normalize products in sale_items to always be object or null
@@ -115,21 +86,33 @@ function normalizeExternalSaleItems(external_sale_items: unknown): SaleItemDetai
   return external_sale_items.map((item) => ({ ...item }));
 }
 
+function getMonthRange(today = new Date()) {
+  return {
+    from: startOfMonth(today),
+    to: endOfMonth(today),
+  };
+}
+
 export default function RecentSalesModalClient({
   initialRecentSales = [],
   isOpen,
   onClose,
   currentCashierId,
-  currentUserRole
+  currentUserRole,
+  currentUserBranchId,
+  branches,
 }: RecentSalesModalClientProps) {
   const router = useRouter();
   const { formatCurrency } = useCurrencyFormatter();
 
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
-  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+  const { from: monthStart, to: monthEnd } = useMemo(() => getMonthRange(), []);
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(monthStart);
+  const [dateTo, setDateTo] = useState<Date | undefined>(monthEnd);
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCashier, setSelectedCashier] = useState<string>('all');
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedType, setSelectedType] = useState<string>('all');
   const [isSaleDetailsDialogOpen, setIsSaleDetailsDialogOpen] = useState(false);
   const [selectedSaleDetails, setSelectedSaleDetails] = useState<SaleRecordForRecentSales | null>(null);
 
@@ -137,127 +120,146 @@ export default function RecentSalesModalClient({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const [editSaleState, setEditSaleState] = useState<EditSaleState>({
+    open: false,
+    sale: null,
+    editedFields: null,
+    saving: false,
+    error: null,
+  });
+
+  // Normalize role
+  const normalizedRole = useMemo(
+    () => (currentUserRole || "").replace(/[_\s]/g, "").toLowerCase(),
+    [currentUserRole]
+  );
+  const isCashier = normalizedRole === "cashier";
+  const isBranchManager = normalizedRole === "branchmanager";
+  const isAdminOrGM = normalizedRole === "admin" || normalizedRole === "generalmanager";
+
+  // Permission: can edit this sale?
+  function canEditSale(sale: SaleRecordForRecentSales) {
+    if (isAdminOrGM) return true;
+    if (isBranchManager) return sale.branch_id === currentUserBranchId;
+    if (isCashier) return sale.cashier_id === currentCashierId && sale.branch_id === currentUserBranchId;
+    return false;
+  }
+
+  // REFACTORED: Moved fetchAllSales outside of useEffect and wrapped in useCallback
+  const fetchAllSales = useCallback(async () => {
     setLoading(true);
     setError(null);
+    try {
+      const { data: sales, error: salesError } = await supabaseClient
+        .from("sales")
+        .select(`
+          id, sale_date, cashier_id, branch_id, customer_name, customer_phone, total_amount, payment_method, transaction_reference, status, created_at, updated_at,
+          users ( id, email, role ),
+          branches ( id, name ),
+          sale_items (
+            id, product_id, quantity, unit_sale_price, total_price, note,
+            products ( id, name, unique_reference, product_unit_abbreviation, purchase_price )
+          )
+        `)
+        .order("sale_date", { ascending: false })
+        .limit(50);
 
-    async function fetchAllSales() {
-      try {
-        // Normal sales
-        const { data: sales, error: salesError } = await supabaseClient
-          .from("sales")
-          .select(`
-            id, sale_date, cashier_id, branch_id, customer_name, customer_phone, total_amount, payment_method, transaction_reference, status, created_at, updated_at,
-            users ( id, email, role ),
-            branches ( id, name ),
-            sale_items (
-              id, product_id, quantity, unit_sale_price, total_price, note,
-              products ( id, name, unique_reference, product_unit_abbreviation, purchase_price )
-            )
-          `)
-          .order("sale_date", { ascending: false })
-          .limit(20);
+      if (salesError) throw salesError;
 
-        if (salesError) {
-          setError(salesError.message);
-          setLoading(false);
-          return;
-        }
+      const { data: externalSales, error: externalSalesError } = await supabaseClient
+        .from("external_sales")
+        .select(`
+          id, sale_date, cashier_id, branch_id, customer_name, customer_phone, total_amount, payment_method, transaction_reference, status, created_at, updated_at,
+          users:cashier_id ( id, email, role ),
+          branches ( id, name ),
+          external_sale_items (
+            id, product_name, product_category_name, product_unit_name, quantity, unit_sale_price, unit_purchase_price_negotiated, total_cost, total_price, note
+          )
+        `)
+        .order("sale_date", { ascending: false })
+        .limit(50);
 
-        // External sales
-        const { data: externalSales, error: externalSalesError } = await supabaseClient
-          .from("external_sales")
-          .select(`
-            id, sale_date, cashier_id, branch_id, customer_name, customer_phone, total_amount, payment_method, transaction_reference, status, created_at, updated_at,
-            users:cashier_id ( id, email, role ),
-            branches ( id, name ),
-            external_sale_items (
-              id, product_name, product_category_name, product_unit_name, quantity, unit_sale_price, unit_purchase_price_negotiated, total_cost, total_price, note
-            )
-          `)
-          .order("sale_date", { ascending: false })
-          .limit(20);
+      if (externalSalesError) throw externalSalesError;
 
-        if (externalSalesError) {
-          setError(externalSalesError.message);
-          setLoading(false);
-          return;
-        }
+      const externalSalesFormatted: SaleRecordForRecentSales[] = (externalSales ?? []).map((sale) => ({
+        id: sale.id,
+        sale_date: sale.sale_date,
+        cashier_id: sale.cashier_id,
+        branch_id: sale.branch_id,
+        customer_name: sale.customer_name,
+        customer_phone: sale.customer_phone,
+        total_amount: sale.total_amount,
+        payment_method: sale.payment_method,
+        transaction_reference: sale.transaction_reference,
+        status: sale.status,
+        created_at: sale.created_at,
+        updated_at: sale.updated_at,
+        users: Array.isArray(sale.users) ? sale.users[0] ?? null : sale.users ?? null,
+        branches: Array.isArray(sale.branches) ? sale.branches[0] ?? null : sale.branches ?? null,
+        sale_items: normalizeExternalSaleItems(sale.external_sale_items),
+        saleType: "External Sale"
+      }));
 
-        const externalSalesFormatted: SaleRecordForRecentSales[] = (externalSales ?? []).map((sale) => ({
-          id: sale.id,
-          sale_date: sale.sale_date,
-          cashier_id: sale.cashier_id,
-          branch_id: sale.branch_id,
-          customer_name: sale.customer_name,
-          customer_phone: sale.customer_phone,
-          total_amount: sale.total_amount,
-          payment_method: sale.payment_method,
-          transaction_reference: sale.transaction_reference,
-          status: sale.status,
-          created_at: sale.created_at,
-          updated_at: sale.updated_at,
-          users: Array.isArray(sale.users) ? sale.users[0] ?? null : sale.users ?? null,
-          branches: Array.isArray(sale.branches) ? sale.branches[0] ?? null : sale.branches ?? null,
-          sale_items: normalizeExternalSaleItems(sale.external_sale_items),
-          saleType: "External Sale"
-        }));
+      const salesFormatted: SaleRecordForRecentSales[] = (sales ?? []).map((sale) => ({
+        id: sale.id,
+        sale_date: sale.sale_date,
+        cashier_id: sale.cashier_id,
+        branch_id: sale.branch_id,
+        customer_name: sale.customer_name,
+        customer_phone: sale.customer_phone,
+        total_amount: sale.total_amount,
+        payment_method: sale.payment_method,
+        transaction_reference: sale.transaction_reference,
+        status: sale.status,
+        created_at: sale.created_at,
+        updated_at: sale.updated_at,
+        users: Array.isArray(sale.users) ? sale.users[0] ?? null : sale.users ?? null,
+        branches: Array.isArray(sale.branches) ? sale.branches[0] ?? null : sale.branches ?? null,
+        sale_items: normalizeSaleItems(sale.sale_items),
+        saleType: "Sale"
+      }));
 
-        const salesFormatted: SaleRecordForRecentSales[] = (sales ?? []).map((sale) => ({
-          id: sale.id,
-          sale_date: sale.sale_date,
-          cashier_id: sale.cashier_id,
-          branch_id: sale.branch_id,
-          customer_name: sale.customer_name,
-          customer_phone: sale.customer_phone,
-          total_amount: sale.total_amount,
-          payment_method: sale.payment_method,
-          transaction_reference: sale.transaction_reference,
-          status: sale.status,
-          created_at: sale.created_at,
-          updated_at: sale.updated_at,
-          users: Array.isArray(sale.users) ? sale.users[0] ?? null : sale.users ?? null,
-          branches: Array.isArray(sale.branches) ? sale.branches[0] ?? null : sale.branches ?? null,
-          sale_items: normalizeSaleItems(sale.sale_items),
-          saleType: "Sale"
-        }));
+      const mergedSales = [...salesFormatted, ...externalSalesFormatted].sort(
+        (a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime()
+      );
 
-        const mergedSales = [...salesFormatted, ...externalSalesFormatted].sort(
-          (a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime()
-        );
-
-        setAllSales(mergedSales);
-        setLoading(false);
-      } catch (err) {
-        setError((err as Error).message);
-        setLoading(false);
-      }
+      setAllSales(mergedSales);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
-    fetchAllSales();
-  }, [isOpen]);
+  }, []); // No dependencies needed as it doesn't rely on changing props/state
 
-  const canFilterByCashier = ["admin", "general_manager", "branch_manager"].includes(currentUserRole);
+  useEffect(() => {
+    if (isOpen) {
+      fetchAllSales();
+    }
+  }, [isOpen, fetchAllSales]);
 
-  const cashierOptions = useMemo(() => {
-    const uniqueIds = Array.from(
-      new Set(allSales.map(s => s.users?.id).filter(Boolean))
-    );
-    return uniqueIds.map(cashierId => {
-      const cashier = allSales.find(s => s.users?.id === cashierId)?.users;
-      return cashier ? { id: cashier.id, email: cashier.email } : undefined;
-    }).filter(Boolean) as UserForSelect[];
-  }, [allSales]);
+  const branchOptions = useMemo(() => {
+    if ((isCashier || isBranchManager) && branches.length > 0) {
+      return [branches[0]];
+    }
+    return [{ id: "all", name: "All Branches" }, ...branches];
+  }, [branches, isCashier, isBranchManager]);
 
   const filteredSales = useMemo(() => {
     let salesToDisplay = allSales;
 
-    if (canFilterByCashier) {
-      if (selectedCashier !== 'all') {
-        salesToDisplay = salesToDisplay.filter(sale => sale.cashier_id === selectedCashier);
-      }
-    } else {
-      salesToDisplay = salesToDisplay.filter(sale => sale.cashier_id === currentCashierId);
+    if (isCashier) {
+      const branchId = branches[0]?.id;
+      salesToDisplay = salesToDisplay.filter(
+        (sale) =>
+          sale.cashier_id === currentCashierId &&
+          sale.branch_id === branchId
+      );
+    } else if (isBranchManager) {
+      salesToDisplay = salesToDisplay.filter(
+        (sale) => sale.branch_id === currentUserBranchId
+      );
+    } else if (selectedBranch !== 'all') {
+      salesToDisplay = salesToDisplay.filter(sale => sale.branch_id === selectedBranch);
     }
 
     if (dateFrom && dateTo) {
@@ -280,16 +282,28 @@ export default function RecentSalesModalClient({
       salesToDisplay = salesToDisplay.filter(sale => sale.status === selectedStatus);
     }
 
+    if (selectedType !== 'all') {
+      salesToDisplay = salesToDisplay.filter(sale => {
+        if (selectedType === "regular" && sale.saleType === "Sale") return true;
+        if (selectedType === "external" && sale.saleType === "External Sale") return true;
+        return false;
+      });
+    }
+
     return salesToDisplay;
   }, [
     allSales,
     dateFrom,
     dateTo,
     searchQuery,
-    selectedCashier,
+    selectedBranch,
     selectedStatus,
+    selectedType,
     currentCashierId,
-    canFilterByCashier
+    currentUserBranchId,
+    branches,
+    isCashier,
+    isBranchManager,
   ]);
 
   const totalSalesCount = filteredSales.length;
@@ -313,11 +327,12 @@ export default function RecentSalesModalClient({
   };
 
   const handleResetFilters = () => {
-    setDateFrom(undefined);
-    setDateTo(undefined);
+    setDateFrom(monthStart);
+    setDateTo(monthEnd);
     setSearchQuery('');
-    setSelectedCashier('all');
+    setSelectedBranch((isCashier || isBranchManager) && branches.length > 0 ? branches[0].id : 'all');
     setSelectedStatus('all');
+    setSelectedType('all');
   };
 
   const getStatusColorClass = (status: SaleRecordForRecentSales["status"]) => {
@@ -327,6 +342,148 @@ export default function RecentSalesModalClient({
       default: return '';
     }
   };
+
+  const handleEditSale = (sale: SaleRecordForRecentSales) => {
+    setEditSaleState({
+      open: true,
+      sale,
+      editedFields: {
+        customer_name: sale.customer_name || "",
+        customer_phone: sale.customer_phone || "",
+        sale_items: sale.sale_items.map(item => ({
+          id: item.id,
+          quantity: item.quantity,
+          unit_sale_price: item.unit_sale_price,
+          note: item.note ?? "",
+          ...(sale.saleType === "External Sale" ? { product_name: item.product_name ?? "" } : {}),
+        })),
+      },
+      saving: false,
+      error: null,
+    });
+  };
+
+  const handleEditFieldChange = (field: 'customer_name' | 'customer_phone', value: string) => {
+    setEditSaleState(prev => {
+      if (!prev.editedFields) return prev;
+      return {
+        ...prev,
+        editedFields: {
+          ...prev.editedFields,
+          [field]: value,
+        }
+      };
+    });
+  };
+
+  const handleEditSaleItemFieldChange = (
+    idx: number,
+    field: keyof EditSaleFields['sale_items'][0],
+    value: any
+  ) => {
+    setEditSaleState(prev => {
+      if (!prev.editedFields) return prev;
+      const newItems = [...prev.editedFields.sale_items];
+      newItems[idx] = { ...newItems[idx], [field]: value };
+      return {
+        ...prev,
+        editedFields: {
+          ...prev.editedFields,
+          sale_items: newItems,
+        }
+      };
+    });
+  };
+
+  // --- Calculate total amount for the edited sale dynamically ---
+  const editedTotalAmount = useMemo(() => {
+    if (!editSaleState.editedFields) return 0;
+    return editSaleState.editedFields.sale_items.reduce(
+      (sum, item) => sum + (item.quantity * item.unit_sale_price),
+      0
+    );
+  }, [editSaleState.editedFields]);
+
+  const handleSaveEditSale = async () => {
+    if (!editSaleState.sale || !editSaleState.editedFields) return;
+    setEditSaleState(prev => ({ ...prev, saving: true, error: null }));
+
+    if (!canEditSale(editSaleState.sale)) {
+      setEditSaleState(prev => ({
+        ...prev,
+        saving: false,
+        error: "You do not have permission to edit this sale.",
+      }));
+      return;
+    }
+
+    const saleUpdate = {
+      customer_name: editSaleState.editedFields.customer_name,
+      customer_phone: editSaleState.editedFields.customer_phone,
+      total_amount: editedTotalAmount, // update total_amount
+    };
+
+    const saleItemsUpdate = editSaleState.editedFields.sale_items.map(item => {
+      const base = {
+        id: item.id,
+        quantity: item.quantity,
+        unit_sale_price: item.unit_sale_price,
+        note: item.note,
+      };
+      if (editSaleState.sale?.saleType === "External Sale") {
+        return { ...base, product_name: item.product_name };
+      }
+      return base;
+    });
+
+    try {
+      const { error: saleError } = await supabaseClient
+        .from(editSaleState.sale.saleType === "Sale" ? "sales" : "external_sales")
+        .update(saleUpdate)
+        .eq("id", editSaleState.sale.id);
+
+      if (saleError) throw new Error(saleError.message);
+
+      for (const item of saleItemsUpdate) {
+        const table =
+          editSaleState.sale.saleType === "Sale"
+            ? "sale_items"
+            : "external_sale_items";
+        const updatePayload =
+          table === "external_sale_items"
+            ? { quantity: item.quantity, unit_sale_price: item.unit_sale_price, note: item.note, product_name: (item as any).product_name }
+            : { quantity: item.quantity, unit_sale_price: item.unit_sale_price, note: item.note };
+        const { error: itemError } = await supabaseClient
+          .from(table)
+          .update(updatePayload)
+          .eq("id", item.id);
+        if (itemError) throw new Error(itemError.message);
+      }
+
+      // **MODIFICATION**: Close modal and re-fetch data to refresh the table
+      setEditSaleState({
+        open: false,
+        sale: null,
+        editedFields: null,
+        saving: false,
+        error: null,
+      });
+      await fetchAllSales(); // This will re-fetch and update the table
+
+    } catch (err: any) {
+      setEditSaleState(prev => ({
+        ...prev,
+        saving: false,
+        error: err.message || "Failed to update sale.",
+      }));
+    }
+  };
+
+  useEffect(() => {
+    if ((isCashier || isBranchManager) && branches.length > 0) {
+      setSelectedBranch(branches[0].id);
+    }
+  }, [isOpen, isCashier, isBranchManager, branches]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -364,8 +521,9 @@ export default function RecentSalesModalClient({
             </CardContent>
           </Card>
         </div>
+        {/* --- FILTER SECTION --- */}
         <div className="flex flex-wrap items-end gap-4 mb-4">
-          <div className="grid gap-1 flex-grow">
+          <div className="grid gap-1 flex-grow min-w-[210px]">
             <Label htmlFor="search_sales">Search</Label>
             <Input
               id="search_sales"
@@ -374,11 +532,11 @@ export default function RecentSalesModalClient({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="grid gap-1">
+          <div className="grid gap-1 min-w-[180px]">
             <Label htmlFor="date_from_sales">Date From</Label>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant={"outline"} className={cn("w-[160px] justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}>
+                <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}>
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {dateFrom ? format(dateFrom, "PPP") : <span>Pick a date</span>}
                 </Button>
@@ -388,11 +546,11 @@ export default function RecentSalesModalClient({
               </PopoverContent>
             </Popover>
           </div>
-          <div className="grid gap-1">
+          <div className="grid gap-1 min-w-[180px]">
             <Label htmlFor="date_to_sales">Date To</Label>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant={"outline"} className={cn("w-[160px] justify-start text-left font-normal", !dateTo && "text-muted-foreground")}>
+                <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !dateTo && "text-muted-foreground")}>
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {dateTo ? format(dateTo, "PPP") : <span>Pick a date</span>}
                 </Button>
@@ -402,38 +560,53 @@ export default function RecentSalesModalClient({
               </PopoverContent>
             </Popover>
           </div>
-          {canFilterByCashier && (
-            <div className="grid gap-1">
-              <Label htmlFor="cashier_sales_filter">Cashier</Label>
-              <Select onValueChange={setSelectedCashier} value={selectedCashier}>
-                <SelectTrigger className="w-[180px]" id="cashier_sales_filter">
-                  <SelectValue placeholder="All Cashiers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Cashiers</SelectItem>
-                  {cashierOptions.map(cashier => (
-                    <SelectItem key={cashier.id} value={cashier.id}>{cashier.email}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="grid gap-1">
+          <div className="grid gap-1 min-w-[160px]">
+            <Label htmlFor="branch_sales_filter">Branch</Label>
+            <Select
+              onValueChange={setSelectedBranch}
+              value={selectedBranch}
+              disabled={isCashier || isBranchManager}
+            >
+              <SelectTrigger className="w-full" id="branch_sales_filter">
+                <SelectValue placeholder="All Branches" />
+              </SelectTrigger>
+              <SelectContent>
+                {branchOptions.map(branch => (
+                  <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1 min-w-[140px]">
             <Label htmlFor="status_sales_filter">Status</Label>
             <Select onValueChange={setSelectedStatus} value={selectedStatus}>
-              <SelectTrigger className="w-[180px]" id="status_sales_filter">
+              <SelectTrigger className="w-full" id="status_sales_filter">
                 <SelectValue placeholder="All Statuses" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="held">Held</SelectItem> 
+                <SelectItem value="held">Held</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={handleResetFilters} variant="outline" className="self-end">Reset</Button>
+          <div className="grid gap-1 min-w-[120px]">
+            <Label htmlFor="type_sales_filter">Type</Label>
+            <Select onValueChange={setSelectedType} value={selectedType}>
+              <SelectTrigger className="w-full" id="type_sales_filter">
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="regular">Regular Sale</SelectItem>
+                <SelectItem value="external">External Sale</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="self-end">
+            <Button onClick={handleResetFilters} variant="outline">Reset</Button>
+          </div>
         </div>
-        {/* Table with scroll */}
         <div
           className="w-full rounded border bg-white shadow-sm mb-2"
           style={{ maxHeight: "480px", overflow: "auto", minWidth: 1100 }}
@@ -451,7 +624,7 @@ export default function RecentSalesModalClient({
                   <TableHead>Ref.</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Cashier</TableHead>
+                  <TableHead>Branch</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Status</TableHead>
@@ -476,7 +649,7 @@ export default function RecentSalesModalClient({
                         </span>
                       </TableCell>
                       <TableCell>{format(parseISO(sale.sale_date), 'PPP')}</TableCell>
-                      <TableCell>{sale.users?.email || 'N/A'}</TableCell>
+                      <TableCell>{sale.branches?.name || 'N/A'}</TableCell>
                       <TableCell>{sale.customer_name || 'N/A'}</TableCell>
                       <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
                       <TableCell>
@@ -484,21 +657,30 @@ export default function RecentSalesModalClient({
                           {sale.status.replace("_", " ").toUpperCase()}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right flex gap-2 justify-end">
                         <Button
                           variant="outline"
-                          size="sm"
+                          size="icon"
                           onClick={() => handleViewDetails(sale)}
                           title="View Details"
                         >
-                          <Eye className="h-4 w-4" /> View Details
+                          <Eye className="h-4 w-4" />
                         </Button>
+                        {canEditSale(sale) && (
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => handleEditSale(sale)}
+                            title="Edit Sale"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleReprintReceipt(sale.transaction_reference, sale.saleType)}
                           title="Reprint Receipt"
-                          className="ml-2"
                         >
                           <ExternalLink className="h-4 w-4" /> Receipt
                         </Button>
@@ -543,7 +725,6 @@ export default function RecentSalesModalClient({
                       <TableHead>Qty</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Unit Price</TableHead>
-                      {/* Purchase Price removed for External Sale */}
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead>Note</TableHead>
                     </TableRow>
@@ -565,14 +746,12 @@ export default function RecentSalesModalClient({
                               'N/A'}
                           </TableCell>
                           <TableCell className="text-right">{formatCurrency(item.unit_sale_price)}</TableCell>
-                          {/* Purchase Price cell removed */}
                           <TableCell className="text-right">{formatCurrency(item.total_price)}</TableCell>
                           <TableCell>{item.note || 'N/A'}</TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        {/* Maintain colSpan for table structure */}
                         <TableCell colSpan={6} className="h-16 text-center">No items found for this sale.</TableCell>
                       </TableRow>
                     )}
@@ -590,7 +769,140 @@ export default function RecentSalesModalClient({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {/* Edit Sale Modal */}
+        <Dialog open={editSaleState.open} onOpenChange={open => setEditSaleState(prev => ({ ...prev, open }))}>
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Sale: {editSaleState.sale?.transaction_reference}</DialogTitle>
+              <DialogDescription>
+                {isAdminOrGM
+                  ? "You can edit any sale."
+                  : isBranchManager
+                  ? "You can edit sales under your branch."
+                  : "You can only edit your own sales."
+                }
+                Update customer info, quantity, unit price, or note.
+              </DialogDescription>
+            </DialogHeader>
+            {editSaleState.editedFields && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  handleSaveEditSale();
+                }}
+              >
+                <div className="grid grid-cols-2 gap-4 text-sm py-4">
+                  <div>
+                    <Label>Customer Name</Label>
+                    <Input
+                      value={editSaleState.editedFields.customer_name}
+                      onChange={e => handleEditFieldChange("customer_name", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>Customer Phone</Label>
+                    <Input
+                      value={editSaleState.editedFields.customer_phone || ""}
+                      onChange={e => handleEditFieldChange("customer_phone", e.target.value)}
+                    />
+                  </div>
+                </div>
+                {/* --- Display Dynamic Total Amount --- */}
+                <div className="mb-3 flex items-center">
+                  <span className="font-semibold mr-2">Total Amount:</span>
+                  <span className="text-xl font-bold">{formatCurrency(editedTotalAmount)}</span>
+                </div>
+                <h3 className="text-lg font-semibold mt-4 mb-3">Edit Items</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead>Unit Price</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead>Note</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {editSaleState.editedFields.sale_items.map((item, idx) => {
+                      const orig = (editSaleState.sale?.sale_items ?? []).find(si => si.id === item.id);
+                      const itemTotal = item.quantity * item.unit_sale_price;
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            {editSaleState.sale?.saleType === "External Sale" ? (
+                              <Input
+                                value={item.product_name ?? orig?.product_name ?? ""}
+                                onChange={e =>
+                                  handleEditSaleItemFieldChange(idx, "product_name", e.target.value)
+                                }
+                                required
+                              />
+                            ) : (
+                              <>
+                                {orig?.products?.name || "N/A"}
+                                {orig?.products?.unique_reference
+                                  ? ` (${orig.products.unique_reference})`
+                                  : ""}
+                              </>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={e =>
+                                handleEditSaleItemFieldChange(idx, "quantity", Number(e.target.value))
+                              }
+                              required
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={item.unit_sale_price}
+                              onChange={e =>
+                                handleEditSaleItemFieldChange(idx, "unit_sale_price", Number(e.target.value))
+                              }
+                              required
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-semibold">{formatCurrency(itemTotal)}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={item.note ?? ""}
+                              onChange={e =>
+                                handleEditSaleItemFieldChange(idx, "note", e.target.value)
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                {editSaleState.error && (
+                  <div className="text-red-700 mt-2">{editSaleState.error}</div>
+                )}
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setEditSaleState({ open: false, sale: null, editedFields: null, saving: false, error: null })}>Cancel</Button>
+                  <Button type="submit" disabled={editSaleState.saving}>
+                    {editSaleState.saving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
+                    Save Changes
+                  </Button>
+                </DialogFooter>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
-} 
+}
+  

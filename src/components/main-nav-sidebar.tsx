@@ -1,7 +1,7 @@
-// src/components/main-nav-sidebar.tsx
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Home,
@@ -16,12 +16,12 @@ import {
   ChevronLeft,
   ChevronRight,
   ReceiptText,
-  ClipboardList, // NEW: Icon for Stock Manager
-  Boxes, // NEW: Icon for Stock Controller
-} from 'lucide-react'; // CORRECTED: Added new icons
+  ClipboardList,
+  Boxes,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'; // Tooltip components are used
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const menuItems = [
   { href: "/dashboard/overview", icon: Home, label: "Overview", alt: "Overview" },
@@ -33,7 +33,7 @@ const menuItems = [
   { href: "/dashboard/accounting", icon: Banknote, label: "Accounting", alt: "Accounting" },
 ];
 
-const stockManagementItems = [ // NEW: Group for Stock Management
+const stockManagementItems = [
   { href: "/dashboard/stock-controller", icon: Boxes, label: "Stock Controller", alt: "Stock Controller" },
   { href: "/dashboard/stock-manager", icon: ClipboardList, label: "Stock Manager", alt: "Stock Manager" },
 ];
@@ -47,6 +47,7 @@ const settingsItems = [
 
 export default function MainNavSidebar({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (mobile) setIsCollapsed(false);
@@ -57,6 +58,70 @@ export default function MainNavSidebar({ mobile = false, onClose }: { mobile?: b
       document.documentElement.style.setProperty("--sidebar-width", isCollapsed ? "72px" : "288px");
     }
   }, [isCollapsed, mobile]);
+
+  // Handles navigation and closes the sidebar swiftly on mobile
+  const handleNav = (href: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    router.push(href);
+    if (mobile && onClose) {
+      // Use setTimeout(0) to allow navigation to start before closing menu (prevents lag)
+      setTimeout(() => {
+        onClose();
+      }, 0);
+    }
+  };
+
+  // Render a menu group
+  function renderGroup(items: typeof menuItems) {
+    return items.map((item) => (
+      <Tooltip key={item.href}>
+        <TooltipTrigger asChild>
+          {mobile ? (
+            // On mobile, use <a> to prevent Next.js prefetch lag, and handle nav manually
+            <a
+              href={item.href}
+              onClick={handleNav(item.href)}
+              className={cn(
+                "group flex items-center gap-5 rounded-xl px-3 py-4 transition",
+                "hover:bg-primary/10 hover:shadow",
+                "text-muted-foreground hover:text-primary font-semibold",
+                isCollapsed ? "justify-center" : "",
+                "duration-200 relative"
+              )}
+            >
+              <item.icon className="h-6 w-6" />
+              <span className={cn(isCollapsed ? "sr-only" : "inline")}>{item.label}</span>
+              {isCollapsed && (
+                <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  {item.alt}
+                </span>
+              )}
+            </a>
+          ) : (
+            <Link
+              href={item.href}
+              className={cn(
+                "group flex items-center gap-5 rounded-xl px-3 py-4 transition",
+                "hover:bg-primary/10 hover:shadow",
+                "text-muted-foreground hover:text-primary font-semibold",
+                isCollapsed ? "justify-center" : "",
+                "duration-200 relative"
+              )}
+            >
+              <item.icon className="h-6 w-6" />
+              <span className={cn(isCollapsed ? "sr-only" : "inline")}>{item.label}</span>
+              {isCollapsed && (
+                <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  {item.alt}
+                </span>
+              )}
+            </Link>
+          )}
+        </TooltipTrigger>
+        <TooltipContent side="right">{item.alt}</TooltipContent>
+      </Tooltip>
+    ));
+  }
 
   return (
     <aside
@@ -105,95 +170,23 @@ export default function MainNavSidebar({ mobile = false, onClose }: { mobile?: b
       {/* Menu */}
       <div className="flex-1 py-6 overflow-y-auto">
         <nav className={cn("grid gap-2 px-2 text-base font-medium")}>
-          <TooltipProvider> {/* TooltipProvider is required to wrap Tooltip usage */}
-            {menuItems.map((item) => (
-              <Tooltip key={item.href}>
-                <TooltipTrigger asChild>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "group flex items-center gap-5 rounded-xl px-3 py-4 transition",
-                      "hover:bg-primary/10 hover:shadow",
-                      "text-muted-foreground hover:text-primary font-semibold",
-                      isCollapsed ? "justify-center" : "",
-                      "duration-200 relative"
-                    )}
-                  >
-                    <item.icon className="h-6 w-6" />
-                    <span className={cn(isCollapsed ? "sr-only" : "inline")}>{item.label}</span>
-                    {isCollapsed && (
-                      <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                        {item.alt}
-                      </span>
-                    )}
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">{item.alt}</TooltipContent>
-              </Tooltip>
-            ))}
+          <TooltipProvider>
+            {renderGroup(menuItems)}
 
-            {/* NEW: Stock Management Group */}
+            {/* Stock Management Group */}
             <div className={cn("mt-10 mb-3 px-3 text-xs font-bold uppercase text-gray-400 tracking-wide", isCollapsed ? "text-center" : "")}>
               <span className={cn(isCollapsed ? "sr-only" : "inline")}>Stock Management</span>
             </div>
-            {stockManagementItems.map((item) => (
-              <Tooltip key={item.href}>
-                <TooltipTrigger asChild>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "group flex items-center gap-5 rounded-xl px-3 py-4 transition",
-                      "hover:bg-primary/10 hover:shadow",
-                      "text-muted-foreground hover:text-primary font-semibold",
-                      isCollapsed ? "justify-center" : "",
-                      "duration-200 relative"
-                    )}
-                  >
-                    <item.icon className="h-6 w-6" />
-                    <span className={cn(isCollapsed ? "sr-only" : "inline")}>{item.label}</span>
-                    {isCollapsed && (
-                      <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                        {item.alt}
-                      </span>
-                    )}
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">{item.alt}</TooltipContent>
-              </Tooltip>
-            ))}
+            {renderGroup(stockManagementItems)}
 
             {/* Settings Group */}
             <div className={cn("mt-10 mb-3 px-3 text-xs font-bold uppercase text-gray-400 tracking-wide", isCollapsed ? "text-center" : "")}>
               <span className={cn(isCollapsed ? "sr-only" : "inline")}>Settings</span>
             </div>
-            {settingsItems.map((item) => (
-              <Tooltip key={item.href}>
-                <TooltipTrigger asChild>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "group flex items-center gap-5 rounded-xl px-3 py-4 transition",
-                      "hover:bg-primary/10 hover:shadow",
-                      "text-muted-foreground hover:text-primary font-semibold",
-                      isCollapsed ? "justify-center" : "",
-                      "duration-200 relative"
-                    )}
-                  >
-                    <item.icon className="h-6 w-6" />
-                    <span className={cn(isCollapsed ? "sr-only" : "inline")}>{item.label}</span>
-                    {isCollapsed && (
-                      <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 text-white text-xs rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                        {item.alt}
-                      </span>
-                    )}
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">{item.alt}</TooltipContent>
-              </Tooltip>
-            ))}
-          </TooltipProvider> 
-        </nav> 
+            {renderGroup(settingsItems)}
+          </TooltipProvider>
+        </nav>
       </div>
     </aside>
   );
-}
+}   

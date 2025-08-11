@@ -1,46 +1,15 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
-import StockOverviewClient from './components/stock-overview-client';
+import StockManagementClient from './components/stock-management-client';
 import StockAdjustmentButton from './components/stock-adjustment-button';
-import StockPaginationClient from './components/stock-pagination-client';
+import type {
+  ProductForStock,
+  ProductStockDetail,
+  WarehouseForFilter,
+} from './types';
 
-// --- Type Definitions (aligned with client component and database schema) ---
-type ProductForStock = {
-  id: string;
-  name: string;
-  unique_reference: string;
-  low_stock_threshold: number;
-  product_unit_abbreviation: string | null;
-  categories: {
-    id: string;
-    name: string;
-  } | null;
-};
-
-type ProductStockDetail = {
-  product_id: string;
-  quantity: number;
-  warehouse_id: string;
-  warehouses: {
-    id: string;
-    name: string;
-  } | null;
-};
-
-type CategoryForFilter = {
-  id: string;
-  name: string;
-};
-
-type WarehouseForFilter = {
-  id: string;
-  name: string;
-};
-
-export default async function StockManagementPage({ 
-  searchParams 
-}: any) {
+export default async function StockManagementPage({ searchParams }: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -62,22 +31,27 @@ export default async function StockManagementPage({
   const currentUserId = currentUserProfile.id;
 
   // --- Pagination ---
-  // FIX: Cast value to string for URLSearchParams
   const urlParams = new URLSearchParams(
     Object.entries(searchParams ?? {}).map(([key, value]) => [key, String(value)])
   );
   const page = parseInt(urlParams.get('page') || "1", 10);
   const itemsPerPage = parseInt(urlParams.get('itemsPerPage') || "10", 10);
+
+  // --- Fetch all products for filtering/search ---
+  const { data: allProducts, error: allProductsError } = await supabase
+    .from('products')
+    .select(`
+      id, name, unique_reference, low_stock_threshold, product_unit_abbreviation,
+      categories(id, name)
+    `)
+    .order('name', { ascending: true })
+    .returns<ProductForStock[]>();
+  if (allProductsError) console.error("Error fetching all products for stock:", allProductsError.message);
+
+  // --- Fetch paginated products ---
   const fromIdx = (page - 1) * itemsPerPage;
   const toIdx = fromIdx + itemsPerPage - 1;
-
-  // Fetch total products count for pagination
-  const { count: totalProductsCount } = await supabase
-    .from('products')
-    .select('id', { count: 'exact', head: true });
-
-  // Fetch products with category and unit abbreviation (paginated)
-  const { data: products, error: productsError } = await supabase
+  const { data: paginatedProducts, error: paginatedProductsError } = await supabase
     .from('products')
     .select(`
       id, name, unique_reference, low_stock_threshold, product_unit_abbreviation,
@@ -86,10 +60,14 @@ export default async function StockManagementPage({
     .order('name', { ascending: true })
     .range(fromIdx, toIdx)
     .returns<ProductForStock[]>();
+  if (paginatedProductsError) console.error("Error fetching paginated products for stock:", paginatedProductsError.message);
 
-  if (productsError) console.error("Error fetching products for stock:", productsError.message);
+  // --- Fetch total products count for pagination ---
+  const { count: totalProductsCount } = await supabase
+    .from('products')
+    .select('id', { count: 'exact', head: true });
 
-  // Fetch all stock details
+  // --- Fetch all stock details ---
   const { data: stockDetails, error: stockError } = await supabase
     .from('stock')
     .select(`
@@ -97,23 +75,13 @@ export default async function StockManagementPage({
       warehouses(id, name)
     `)
     .returns<ProductStockDetail[]>();
-
   if (stockError) console.error("Error fetching stock details:", stockError.message);
 
-  // Fetch categories for filter dropdown
-  const { data: categories, error: categoriesError } = await supabase
-    .from('categories')
-    .select('id, name')
-    .returns<CategoryForFilter[]>();
-
-  if (categoriesError) console.error("Error fetching categories for filter:", categoriesError.message);
-
-  // Fetch warehouses for filter dropdown
+  // --- Fetch warehouses for filter dropdown ---
   const { data: warehouses, error: warehousesError } = await supabase
     .from('warehouses')
     .select('id, name')
     .returns<WarehouseForFilter[]>();
-
   if (warehousesError) console.error("Error fetching warehouses for filter:", warehousesError.message);
 
   return (
@@ -122,31 +90,22 @@ export default async function StockManagementPage({
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Stock Management</h1>
         <StockAdjustmentButton
-          products={products || []}
+          products={allProducts || []}
           warehouses={warehouses || []}
           currentUserId={currentUserId}
         />
       </div>
       {/* --- Main Container --- */}
       <div className="bg-white rounded-lg shadow-md px-8 py-8">
-        {/* --- Section: Stock Overview --- */}
-        <div className="mb-8">
-          <StockOverviewClient
-            initialProducts={products || []}
-            initialStockDetails={stockDetails || []}
-            initialCategories={categories || []}
-            initialWarehouses={warehouses || []}
-          />
-        </div>
-
-        {/* --- Pagination controls only at the bottom --- */}
-        <div className="flex justify-center">
-          <StockPaginationClient
-            totalItems={totalProductsCount ?? 0}
-            itemsPerPage={itemsPerPage}
-            currentPage={page}
-          />
-        </div>
+        <StockManagementClient
+          products={paginatedProducts || []}
+          allProducts={allProducts || []}
+          stockDetails={stockDetails || []}
+          warehouses={warehouses || []}
+          totalProductsCount={totalProductsCount ?? 0}
+          initialPage={page}
+          initialItemsPerPage={itemsPerPage}
+        />
       </div>
     </div>
   );

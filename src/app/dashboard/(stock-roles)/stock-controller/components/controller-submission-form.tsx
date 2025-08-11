@@ -42,45 +42,10 @@ import {
   PendingAuditRecord,
 } from '../types';
 
-interface ControllerSubmissionFormProps {
-  warehouses: WarehouseForController[];
-  allCategories: ProductCategory[];
-  recordedByUserId: string;
-  initialSubmission?: PendingAuditRecord | null;
-  isOpen?: boolean;
-  onClose?: () => void;
-  onSubmissionSuccess?: () => void;
-}
-
 // Helper to format date for datetime-local input
 function toDatetimeLocal(date: Date): string {
   return format(new Date(date), "yyyy-MM-dd'T'HH:mm");
 }
-
-// Tile dimensions suggestions
-const TILE_DIMENSIONS_SUGGESTIONS = [
-  "10cm x 10cm",
-  "15cm x 15cm",
-  "20cm x 20cm",
-  "20cm x 30cm",
-  "25cm x 25cm",
-  "30cm x 30cm",
-  "30cm x 60cm",
-  "33cm x 33cm",
-  "40cm x 40cm",
-  "45cm x 45cm",
-  "50cm x 50cm",
-  "60cm x 60cm",
-  "60cm x 120cm",
-  "75cm x 75cm",
-  "80cm x 80cm",
-  "90cm x 90cm",
-  "100cm x 100cm",
-  "120cm x 120cm",
-  "120cm x 240cm",
-  "120cm x 270cm",
-  "160cm x 320cm",
-];
 
 export default function ControllerSubmissionForm({
   warehouses,
@@ -90,12 +55,32 @@ export default function ControllerSubmissionForm({
   isOpen = false,
   onClose = () => {},
   onSubmissionSuccess = () => {},
-}: ControllerSubmissionFormProps) {
+}: {
+  warehouses: WarehouseForController[],
+  allCategories: ProductCategory[],
+  recordedByUserId: string,
+  initialSubmission?: PendingAuditRecord | null,
+  isOpen?: boolean,
+  onClose?: () => void,
+  onSubmissionSuccess?: () => void,
+}) {
   const [isLoading, setIsLoading] = useState(false);
 
-  // Store which product name input is focused and its value for auto-complete
-  const [focusedProductIndex, setFocusedProductIndex] = useState<number | null>(null);
-  const [productNameInputs, setProductNameInputs] = useState<{ [index: number]: string }>({});
+  // Product list for reference autocomplete
+  const [productList, setProductList] = useState<
+    {
+      id: string;
+      unique_reference: string;
+      name: string;
+      category_id: string;
+      product_unit_abbreviation: string | null;
+    }[]
+  >([]);
+
+  // Track which autocomplete is open
+  const [focusedProductRefIndex, setFocusedProductRefIndex] = useState<number | null>(null);
+  // Track product ref input values per row
+  const [productRefInputs, setProductRefInputs] = useState<Record<number, string>>({});
 
   const form = useForm<ControllerStockSubmissionFormValues>({
     resolver: zodResolver(controllerStockSubmissionFormSchema),
@@ -127,6 +112,20 @@ export default function ControllerSubmissionForm({
     ];
   }, [allCategories]);
 
+  // Fetch products from DB on modal open
+  useEffect(() => {
+    if (isOpen) {
+      (async () => {
+        const { data, error } = await supabaseClient
+          .from('products')
+          .select('id, unique_reference, name, category_id, product_unit_abbreviation')
+          .order('unique_reference', { ascending: true });
+        if (data) setProductList(data);
+        if (error) toast.error("Failed to fetch product list for audit input", { description: error.message });
+      })();
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
       if (initialSubmission) {
@@ -144,6 +143,7 @@ export default function ControllerSubmissionForm({
           })),
           notes_from_controller: initialSubmission.notes_from_controller || '',
         });
+        setProductRefInputs({});
       } else {
         form.reset({
           submission_id: undefined,
@@ -152,17 +152,18 @@ export default function ControllerSubmissionForm({
           products_submitted: [{ tempId: crypto.randomUUID(), product_name: '', product_ref: '', quantity: 1, category_id: '', product_unit_abbreviation: '' }],
           notes_from_controller: '',
         });
+        setProductRefInputs({});
       }
       form.clearErrors();
-      setProductNameInputs({});
     }
   }, [isOpen, initialSubmission, form]);
 
   const isEditing = !!initialSubmission?.id;
 
+  // Submission handler
   const onSubmit: SubmitHandler<ControllerStockSubmissionFormValues> = async (values) => {
     setIsLoading(true);
-    
+
     const productsSubmittedPayload = values.products_submitted.map((p) => {
       const selectedCategory = allCategories.find(cat => cat.id === p.category_id);
       return {
@@ -196,34 +197,60 @@ export default function ControllerSubmissionForm({
     setIsLoading(false);
   };
 
-  // --- AUTOCOMPLETE LOGIC ---
-  // Filter suggestions based on current input value (case-insensitive, show only if input is non-empty)
-  const getSuggestions = (input: string) => {
+  // --- AUTOCOMPLETE LOGIC FOR PRODUCT REFERENCE ---
+  // Filter suggestions locally from productList (case-insensitive, show only if input is non-empty)
+  const getReferenceSuggestions = (input: string) => {
     if (!input) return [];
-    const lower = input.toLowerCase();
-    return TILE_DIMENSIONS_SUGGESTIONS.filter(s => s.toLowerCase().includes(lower));
+    const upper = input.toUpperCase();
+    return productList.filter(p => p.unique_reference.includes(upper));
   };
 
-  // Handle product name input change for each index
-  const handleProductNameChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setProductNameInputs(prev => ({ ...prev, [index]: value }));
-    form.setValue(`products_submitted.${index}.product_name`, value, { shouldValidate: true });
+  // Product Reference input change: always uppercase, update value, check for match to autofill
+  const handleProductRefChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase(); // enforce uppercase
+
+    setProductRefInputs(prev => ({ ...prev, [index]: value }));
+
+    // Update form value for reference
+    form.setValue(`products_submitted.${index}.product_ref`, value, { shouldValidate: true });
+
+    // Try to find existing product by reference
+    const match = productList.find(p => p.unique_reference === value);
+
+    if (match) {
+      // Autofill name, category, unit_abbreviation, and lock their fields
+      form.setValue(`products_submitted.${index}.product_name`, match.name, { shouldValidate: true });
+      form.setValue(`products_submitted.${index}.category_id`, match.category_id, { shouldValidate: true });
+      form.setValue(`products_submitted.${index}.product_unit_abbreviation`, match.product_unit_abbreviation || '');
+    } else {
+      // Reset autofilled fields if no match
+      form.setValue(`products_submitted.${index}.product_name`, '', { shouldValidate: false });
+      form.setValue(`products_submitted.${index}.category_id`, '', { shouldValidate: false });
+      form.setValue(`products_submitted.${index}.product_unit_abbreviation`, '');
+    }
   };
 
-  // On selecting a suggestion, set the input value & close suggestions
-  const handleSuggestionClick = (index: number, suggestion: string) => {
-    setProductNameInputs(prev => ({ ...prev, [index]: suggestion }));
-    form.setValue(`products_submitted.${index}.product_name`, suggestion, { shouldValidate: true });
-    setFocusedProductIndex(null); // close suggestion dropdown
+  // On selecting a suggestion, fill reference and autofill fields
+  const handleReferenceSuggestionClick = (index: number, suggestion: string) => {
+    setProductRefInputs(prev => ({ ...prev, [index]: suggestion }));
+    form.setValue(`products_submitted.${index}.product_ref`, suggestion, { shouldValidate: true });
+
+    const match = productList.find(p => p.unique_reference === suggestion);
+    if (match) {
+      form.setValue(`products_submitted.${index}.product_name`, match.name, { shouldValidate: true });
+      form.setValue(`products_submitted.${index}.category_id`, match.category_id, { shouldValidate: true });
+      form.setValue(`products_submitted.${index}.product_unit_abbreviation`, match.product_unit_abbreviation || '');
+    }
+    setFocusedProductRefIndex(null); // close suggestion dropdown
   };
 
   // Hide suggestions when input loses focus, but delay to allow click
-  const handleBlur = () => {
-    setTimeout(() => setFocusedProductIndex(null), 100);
+  const handleRefBlur = () => {
+    setTimeout(() => setFocusedProductRefIndex(null), 100);
   };
 
-  // --- END AUTOCOMPLETE LOGIC ---
+  // Helper to check if reference is a match in productList
+  const isReferenceExisting = (ref: string) => productList.some(p => p.unique_reference === ref);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -263,73 +290,111 @@ export default function ControllerSubmissionForm({
 
           <h3 className="text-lg font-semibold">Products in this Audit</h3>
           <div className="space-y-4">
-            {fields.map((field, index) => (
-              <Card key={field.id} className="p-4 bg-gray-50">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
-                  {/* --- Product Name Autocomplete --- */}
-                  <div className="space-y-2 lg:col-span-2 relative">
-                    <Label>Product Name</Label>
-                    <Input
-                      value={productNameInputs[index] ?? form.getValues(`products_submitted.${index}.product_name`)}
-                      onChange={e => handleProductNameChange(index, e)}
-                      onFocus={() => setFocusedProductIndex(index)}
-                      onBlur={handleBlur}
-                      disabled={isLoading}
-                      autoComplete="off"
-                    />
-                    {/* Only show suggestions if focused and input is non-empty */}
-                    {focusedProductIndex === index && getSuggestions(productNameInputs[index] ?? form.getValues(`products_submitted.${index}.product_name`)).length > 0 && (
-                      <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-300 shadow rounded mt-1 max-h-40 overflow-auto text-sm">
-                        {getSuggestions(productNameInputs[index] ?? form.getValues(`products_submitted.${index}.product_name`)).map((sugg) => (
-                          <li
-                            key={sugg}
-                            className="px-3 py-2 cursor-pointer hover:bg-gray-100"
-                            onMouseDown={() => handleSuggestionClick(index, sugg)}
+            {fields.map((field, index) => {
+              const refValue = productRefInputs[index] ?? form.getValues(`products_submitted.${index}.product_ref`);
+              const isExisting = isReferenceExisting(refValue);
+
+              return (
+                <Card key={field.id} className="p-4 bg-gray-50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
+                    {/* --- Product Reference Autocomplete --- */}
+                    <div className="space-y-2 lg:col-span-2 relative">
+                      <Label>Product Reference</Label>
+                      <Input
+                        value={refValue}
+                        onChange={e => handleProductRefChange(index, e)}
+                        onFocus={() => setFocusedProductRefIndex(index)}
+                        onBlur={handleRefBlur}
+                        disabled={isLoading}
+                        autoComplete="off"
+                        placeholder="Enter reference"
+                        className="uppercase"
+                        inputMode="text"
+                      />
+                      {/* Only show suggestions if focused and input is non-empty */}
+                      {focusedProductRefIndex === index &&
+                        getReferenceSuggestions(refValue).length > 0 && (
+                          <ul className="absolute z-10 left-0 right-0 bg-white border border-gray-300 shadow rounded mt-1 max-h-40 overflow-auto text-sm">
+                            {getReferenceSuggestions(refValue).map((p) => (
+                              <li
+                                key={p.unique_reference}
+                                className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                                onMouseDown={() => handleReferenceSuggestionClick(index, p.unique_reference)}
+                              >
+                                <span className="font-mono">{p.unique_reference}</span>
+                                <span className="ml-2 text-xs text-gray-600">{p.name}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      {form.formState.errors.products_submitted?.[index]?.product_ref && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].product_ref?.message}</p>}
+                    </div>
+                    {/* --- Product Name (autofilled & locked if existing) --- */}
+                    <div className="space-y-2">
+                      <Label>Product Name</Label>
+                      <Input
+                        {...form.register(`products_submitted.${index}.product_name`)}
+                        disabled={isLoading || isExisting}
+                        readOnly={isExisting}
+                        placeholder={isExisting ? "Auto-filled" : "Enter product name"}
+                        className={isExisting ? "bg-gray-100" : ""}
+                      />
+                      {form.formState.errors.products_submitted?.[index]?.product_name && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].product_name?.message}</p>}
+                    </div>
+                    {/* --- Category (autofilled & locked if existing) --- */}
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Controller
+                        control={form.control}
+                        name={`products_submitted.${index}.category_id`}
+                        render={({ field: controllerField }) => (
+                          <Select
+                            onValueChange={controllerField.onChange}
+                            value={controllerField.value}
+                            disabled={isLoading || isExisting}
                           >
-                            {sugg}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {form.formState.errors.products_submitted?.[index]?.product_name && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].product_name?.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Product Ref</Label>
-                    <Input {...form.register(`products_submitted.${index}.product_ref`)} disabled={isLoading} />
-                     {form.formState.errors.products_submitted?.[index]?.product_ref && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].product_ref?.message}</p>}
-                  </div>
-                   <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Controller
-                      control={form.control}
-                      name={`products_submitted.${index}.category_id`}
-                      render={({ field: controllerField }) => (
-                        <Select onValueChange={controllerField.onChange} value={controllerField.value} disabled={isLoading}>
-                          <SelectTrigger><SelectValue placeholder="Select Category" /></SelectTrigger>
-                          <SelectContent>
-                            {sortedCategories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                     {form.formState.errors.products_submitted?.[index]?.category_id && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].category_id?.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                     <Label>Quantity</Label>
-                     <Input type="number" min="1" {...form.register(`products_submitted.${index}.quantity`, { valueAsNumber: true })} disabled={isLoading} />
+                            <SelectTrigger>
+                              <SelectValue placeholder={isExisting ? "Auto-filled" : "Select Category"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sortedCategories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {form.formState.errors.products_submitted?.[index]?.category_id && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].category_id?.message}</p>}
+                    </div>
+                    {/* --- Quantity --- */}
+                    <div className="space-y-2">
+                      <Label>Quantity</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        {...form.register(`products_submitted.${index}.quantity`, { valueAsNumber: true })}
+                        disabled={isLoading}
+                        placeholder="Enter quantity"
+                      />
                       {form.formState.errors.products_submitted?.[index]?.quantity && <p className="text-red-500 text-sm">{form.formState.errors.products_submitted[index].quantity?.message}</p>}
-                  </div>
-                   <div className="lg:col-span-full flex justify-end items-center mt-2">
+                    </div>
+                    {/* --- Remove Button --- */}
+                    <div className="lg:col-span-full flex justify-end items-center mt-2">
                       {fields.length > 1 && (
-                          <Button type="button" variant="destructive" size="sm" onClick={() => remove(index)} disabled={isLoading}>
-                              <Trash2 className="h-3 w-3 mr-1" /> Remove
-                          </Button>
+                        <Button type="button" variant="destructive" size="sm" onClick={() => remove(index)} disabled={isLoading}>
+                          <Trash2 className="h-3 w-3 mr-1" /> Remove
+                        </Button>
                       )}
+                    </div>
                   </div>
-                </div>
-              </Card>
-            ))}
-            <Button type="button" variant="outline" className="w-full" onClick={() => append({ tempId: crypto.randomUUID(), product_name: '', product_ref: '', quantity: 1, category_id: '', product_unit_abbreviation: '' })} disabled={isLoading}>
+                </Card>
+              );
+            })}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => append({ tempId: crypto.randomUUID(), product_name: '', product_ref: '', quantity: 1, category_id: '', product_unit_abbreviation: '' })}
+              disabled={isLoading}
+            >
               <PlusCircle className="h-4 w-4 mr-2" /> Add Another Product
             </Button>
           </div>
@@ -340,12 +405,12 @@ export default function ControllerSubmissionForm({
           </div>
         </form>
         <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button>
-            <Button type="submit" onClick={form.handleSubmit(onSubmit)} disabled={isLoading}>
-              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : (isEditing ? "Update Submission" : "Submit Audit")}
-            </Button>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>Cancel</Button>
+          <Button type="submit" onClick={form.handleSubmit(onSubmit)} disabled={isLoading}>
+            {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...</> : (isEditing ? "Update Submission" : "Submit Audit")}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-} 
+}

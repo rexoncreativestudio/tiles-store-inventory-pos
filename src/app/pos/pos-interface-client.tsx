@@ -118,6 +118,10 @@ export default function PosInterfaceClient({
     setProductDetailedStock(stockMap);
   }, [initialDetailedStock]);
 
+  // Find branch name for header display
+  const currentBranchName =
+    branches.find((branch) => branch.id === currentUserBranchId)?.name || "Unknown Branch";
+
   // FIX: Changed default value for 'date' to a Date object
   const paymentForm = useForm<PaymentFormValues>({
     defaultValues: { amountReceived: 0, customerName: "", customerPhone: "", status: "completed", date: new Date() },
@@ -245,10 +249,10 @@ export default function PosInterfaceClient({
       return;
     }
     setIsPaymentDialogOpen(true);
-    // FIX: Updated the reset to use a Date object
     paymentForm.reset({ amountReceived: grandTotal, customerName: "", customerPhone: "", status: "completed", date: new Date() });
   };
 
+  // This works for regular sale: it properly passes values.date from the form
   const onPaymentFormSubmit: SubmitHandler<PaymentFormValues> = async (values) => {
     setIsProcessingSale(true);
 
@@ -264,25 +268,7 @@ export default function PosInterfaceClient({
       return;
     }
 
-    const stockDeductionPromises = cart.flatMap((item: CartItem) =>
-      item.warehouse_selections.map(async (deduction: WarehouseSelection) => {
-        const { error: adjustError } = await supabaseClient.rpc('adjust_stock_quantity', {
-          p_product_id: item.id,
-          p_warehouse_id: deduction.warehouse_id,
-          p_quantity_change: -deduction.deducted_quantity,
-          p_user_id: currentCashierId,
-          p_reason: `Sale deduction from POS for ${item.name} (${deduction.deducted_quantity} from ${deduction.warehouse_name})`
-        });
-        if (adjustError) {
-          console.error(`Error deducting stock for product ${item.name} from ${deduction.warehouse_name}:`, adjustError.message);
-          throw new Error(`Stock deduction failed for ${item.name} from ${deduction.warehouse_name}.`);
-        }
-      })
-    );
-
     try {
-      await Promise.all(stockDeductionPromises);
-
       const { data: cashierProfile, error: cashierProfileError } = await supabaseClient
         .from("users")
         .select("branch_id")
@@ -297,7 +283,6 @@ export default function PosInterfaceClient({
       const { data: rpcResponseData, error: funcError } = await supabaseClient
         .rpc("process_sale_transaction", {
           sale_data: {
-            // FIX: Use the Date object's toISOString() directly
             sale_date: values.date?.toISOString() || new Date().toISOString(),
             cashier_id: currentCashierId,
             branch_id: cashierBranchId,
@@ -312,6 +297,7 @@ export default function PosInterfaceClient({
               unit_sale_price: item.unit_sale_price,
               total_price: item.total_line_price,
               note: item.note || "",
+              warehouse_selections: item.warehouse_selections || [],
             })),
           },
         })
@@ -341,6 +327,7 @@ export default function PosInterfaceClient({
     }
   };
 
+  // FIX: For external sale, use the actual selected date from the ExternalSaleFormValues
   const handleExternalSaleSubmit = async (values: ExternalSaleFormValues) => {
     setIsProcessingSale(true);
 
@@ -378,17 +365,23 @@ export default function PosInterfaceClient({
 
     const externalTransactionRef = `EXT-${Date.now()}`;
 
+    // CRITICAL FIX: Use the selected date from the form, not always new Date()
+    const externalSaleDateIso =
+      values.date && !isNaN(new Date(values.date).getTime())
+        ? new Date(values.date).toISOString()
+        : new Date().toISOString();
+
     const { data: externalRpcResponseData, error: externalFuncError } =
       await supabaseClient.rpc("process_external_sale_transaction", {
         external_sale_data: {
-          sale_date: new Date().toISOString(),
+          sale_date: externalSaleDateIso,
           cashier_id: currentCashierId,
           branch_id: cashierBranchId,
           customer_name: values.customerName,
           customer_phone: values.customerPhone || null,
           total_amount: totalExternalSaleAmount,
           payment_method: "Cash",
-          status: "completed",
+          status: values.status,
           authorized_by_user_id: null,
           authorization_code_hashed: null,
           transaction_reference: externalTransactionRef,
@@ -434,7 +427,7 @@ export default function PosInterfaceClient({
   return (
     <div className="flex flex-col h-screen">
       {/* Header (with top left and right controls) */}
-      <header className="w-full bg-white border-b shadow-sm p-4 flex items-center justify-between">
+      <header className="w-full bg-white border-b shadow-sm p-4 flex items-center justify-between relative">
         {/* Left group: Expenses, Recent Sales, Calculator */}
         <div className="flex gap-2 items-center">
           <Button
@@ -464,6 +457,11 @@ export default function PosInterfaceClient({
             <Calculator className="h-4 w-4" />
             Calculator
           </Button>
+        </div>
+
+        {/* Center: Branch Name */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
+          <span className="text-lg font-semibold text-gray-800">{currentBranchName}</span>
         </div>
 
         {/* Right group: Refresh, Logout */}
@@ -687,6 +685,8 @@ export default function PosInterfaceClient({
         onClose={() => setIsRecentSalesModalOpen(false)}
         currentCashierId={currentCashierId}
         currentUserRole={currentUserRole}
+        branches={branches}
+        currentUserBranchId={currentUserBranchId}
       />
 
       {/* Tiles Calculator Dialog */}
@@ -701,9 +701,8 @@ export default function PosInterfaceClient({
         branches={branches}
         currentUserBranchId={currentUserBranchId}
         isOpen={isExpensesReviewModalOpen}
-        onClose={() => setIsExpensesReviewModalOpen(false)}
+        onClose={() => setIsExpensesReviewModalOpen(false)}   
       />
     </div>
   );
-}   
-   
+}  

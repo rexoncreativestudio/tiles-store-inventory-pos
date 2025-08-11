@@ -39,10 +39,8 @@ type ExpenseRecordForDisplay = {
 };
 
 export default async function ExpensesPage({
-  // Changed the type of searchParams to `any` to resolve the build error.
-  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: any) { // Changed from `{ searchParams?: { ... } }` to `any`
+}: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -69,6 +67,16 @@ export default async function ExpensesPage({
   const currentPage = parseInt(searchParams?.page || '1');
   const itemsPerPage = parseInt(searchParams?.limit || '10');
   const offset = (currentPage - 1) * itemsPerPage;
+
+  // Check if any filter is active
+  const isFilterActive = !!(
+    searchParams?.query ||
+    (searchParams?.category && searchParams.category !== 'all') ||
+    (searchParams?.branch && searchParams.branch !== 'all') ||
+    (searchParams?.user && searchParams.user !== 'all') ||
+    searchParams?.dateFrom ||
+    searchParams?.dateTo
+  );
 
   // Build Supabase query for expenses
   let expensesQuery = supabase
@@ -111,10 +119,28 @@ export default async function ExpensesPage({
     expensesQuery = expensesQuery.lte('date', searchParams.dateTo);
   }
 
-  // Apply pagination range AFTER filters
-  const { data: expenses, error: expensesError, count: totalExpenseCount } = await expensesQuery
-    .range(offset, offset + itemsPerPage - 1)
-    .returns<ExpenseRecordForDisplay[]>();
+  let expenses: ExpenseRecordForDisplay[] = [];
+  let expensesError, totalExpenseCount;
+  let effectiveItemsPerPage = itemsPerPage;
+  let effectiveCurrentPage = currentPage;
+
+  if (isFilterActive) {
+    // Remove pagination: fetch all filtered records
+    const { data, error, count } = await expensesQuery.returns<ExpenseRecordForDisplay[]>();
+    expenses = data || [];
+    expensesError = error;
+    totalExpenseCount = count || expenses.length;
+    effectiveItemsPerPage = totalExpenseCount; // Show all
+    effectiveCurrentPage = 1;
+  } else {
+    // Paginated records for unfiltered data
+    const { data, error, count } = await expensesQuery
+      .range(offset, offset + itemsPerPage - 1)
+      .returns<ExpenseRecordForDisplay[]>();
+    expenses = data || [];
+    expensesError = error;
+    totalExpenseCount = count || expenses.length;
+  }
 
   if (expensesError) {
     console.error("Error fetching expenses:", expensesError.message);
@@ -184,14 +210,7 @@ export default async function ExpensesPage({
       <div className="bg-white rounded-lg shadow-md px-8 py-8">
         {/* --- Filters Section above summary --- */}
         <div className="mb-8">
-          {/* Place your filter component here, if you have one (e.g., <ExpenseFilterActions />), pass all needed props */}
-          {/* Example: */}
-          {/* <ExpenseFilterActions
-            expenseCategories={expenseCategories || []}
-            branches={branchesForFilter || []}
-            users={usersForFilter || []}
-            searchParams={searchParams || {}}
-          /> */}
+          {/* Place your filter component here, if you have one */}
         </div>
         {/* --- Overview/Summary Section --- */}
         <ExpenseOverviewClient
@@ -200,12 +219,12 @@ export default async function ExpensesPage({
           initialBranches={branchesForFilter || []}
           initialUsers={usersForFilter || []}
           totalItems={totalExpenseCount || 0}
-          currentPage={currentPage}
-          itemsPerPage={itemsPerPage}
+          currentPage={effectiveCurrentPage}
+          itemsPerPage={effectiveItemsPerPage}
           currentUserId={currentUserId}
+          isFilterActive={isFilterActive}
         />
       </div>
     </div>
   );
-}
- 
+}  

@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCurrencyFormatter } from '@/lib/formatters';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Search } from 'lucide-react';
 import {
   Table,
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import ProductManagementActions from '../product-management-actions';
 import Pagination from '@/components/ui/pagination';
-import { useDebounce } from '@/hooks/use-debounce'; // Assuming you have a debounce hook
+import { useDebounce } from '@/hooks/use-debounce';
 
 type ProductItem = {
   id: string;
@@ -51,6 +51,7 @@ interface ProductOverviewClientProps {
   currentPage: number;
   itemsPerPage: number;
   totalItems: number;
+  isFiltered: boolean;
 }
 
 export default function ProductOverviewClient({
@@ -59,56 +60,48 @@ export default function ProductOverviewClient({
   currentPage,
   itemsPerPage,
   totalItems,
+  isFiltered,
 }: ProductOverviewClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { formatCurrency } = useCurrencyFormatter();
 
-  // Get initial values from URL search params
   const initialQuery = searchParams.get('query') || '';
   const initialCategory = searchParams.get('category') || 'all';
   const initialActiveStatus = searchParams.get('active') || 'all';
 
-  // State for the search input
   const [productSearchQuery, setProductSearchQuery] = useState<string>(initialQuery);
   const debouncedSearchQuery = useDebounce(productSearchQuery, 300);
 
-  // Function to update URL search parameters
   const updateSearchUrl = useCallback((key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
-    
     if (value && value !== 'all') {
       params.set(key, value);
     } else {
       params.delete(key);
     }
-    // Reset to page 1 whenever a filter changes
     params.set('page', '1');
     router.push(`/dashboard/products?${params.toString()}`);
   }, [searchParams, router]);
 
-  // Effect to apply the debounced search query filter
   useEffect(() => {
-    // Only push to router if the debounced value is different from the initial URL param
     if (debouncedSearchQuery !== initialQuery) {
       updateSearchUrl('query', debouncedSearchQuery);
     }
-  }, [debouncedSearchQuery, initialQuery, updateSearchUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchQuery]);
 
-  // Handler to reset all filters
   const resetFilters = () => {
     setProductSearchQuery('');
     router.push('/dashboard/products');
   };
 
-  // Handler for pagination
   const handlePageChange = useCallback((page: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('page', String(page));
     router.push(`/dashboard/products?${params.toString()}`);
   }, [searchParams, router]);
 
-  // Handler for items per page change
   const handleItemsPerPageChange = useCallback((newLimit: number) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('limit', String(newLimit));
@@ -120,105 +113,131 @@ export default function ProductOverviewClient({
     router.refresh();
   };
 
+  // Only apply pagination to unfiltered data
+  const productsToDisplay = useMemo(() => {
+    if (isFiltered) return initialProducts;
+    const startIdx = (currentPage - 1) * itemsPerPage;
+    const endIdx = startIdx + itemsPerPage;
+    return initialProducts.slice(startIdx, endIdx);
+  }, [initialProducts, isFiltered, currentPage, itemsPerPage]);
+
   return (
-    <div className="space-y-6">
-      {/* Filters and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-4 items-end mb-6">
-        <div className="flex-grow relative w-full sm:w-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-          <Input
-            placeholder="Search products by name, reference..."
-            className="pl-10 w-full"
-            value={productSearchQuery}
-            onChange={(e) => setProductSearchQuery(e.target.value)}
-          />
+    <div className="bg-gradient-to-br from-gray-100 via-white to-gray-200 min-h-screen p-0 sm:p-8">
+      {/* --- Filter Section --- */}
+      <section className="bg-white rounded-xl shadow-md mb-8 px-6 py-8">
+        <div className="flex flex-col sm:flex-row gap-4 items-end">
+          <div className="flex-grow relative w-full sm:w-auto">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+            <Input
+              placeholder="Search products by name, reference..."
+              className="pl-10 w-full"
+              value={productSearchQuery}
+              onChange={(e) => setProductSearchQuery(e.target.value)}
+            />
+          </div>
+          <Select onValueChange={(value) => updateSearchUrl('category', value)} value={initialCategory}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {initialCategories.map(cat => (
+                <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select onValueChange={(value) => updateSearchUrl('active', value)} value={initialActiveStatus}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="true">Active</SelectItem>
+              <SelectItem value="false">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={resetFilters} className="self-end">Reset Filters</Button>
         </div>
+      </section>
 
-        <Select onValueChange={(value) => updateSearchUrl('category', value)} value={initialCategory}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {initialCategories.map(cat => (
-              <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select onValueChange={(value) => updateSearchUrl('active', value)} value={initialActiveStatus}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="All Statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="true">Active</SelectItem>
-            <SelectItem value="false">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
-        
-        <Button variant="outline" onClick={resetFilters} className="self-end">Reset Filters</Button>
-      </div>
-
-      {/* Product Table */}
-      <Card>
-        <CardHeader className="flex flex-row justify-between items-center">
+      {/* --- Product Table Section --- */}
+      <section className="bg-white rounded-xl shadow-lg p-0 sm:p-8">
+        <CardHeader className="flex flex-row justify-between items-center pb-4">
           <div>
-            <CardTitle>All Products</CardTitle>
-            <CardDescription>Detailed list of all products in your inventory.</CardDescription>
+            <CardTitle className="text-3xl font-bold text-gray-900 tracking-tight">All Products</CardTitle>
+            <CardDescription className="text-gray-500 mt-1">Detailed list of all products in your inventory.</CardDescription>
           </div>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]">SN</TableHead>
-                <TableHead>Name/Reference</TableHead>
-                <TableHead>Category/Unit</TableHead>
-                <TableHead className="text-right">Sale Price</TableHead>
-                <TableHead className="text-center">Active</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {initialProducts && initialProducts.length > 0 ? (
-                initialProducts.map((product, idx) => (
-                  <TableRow key={product.id}>
-                    <TableCell>{(currentPage - 1) * itemsPerPage + idx + 1}</TableCell>
-                    <TableCell className="font-medium">{product.name} ({product.unique_reference})</TableCell>
-                    <TableCell>{product.categories?.name || 'N/A'} ({product.product_unit_abbreviation || 'N/A'})</TableCell>
-                    <TableCell className="text-right">{formatCurrency(product.sale_price)}</TableCell>
-                    <TableCell className="text-center">{product.is_active ? 'Yes' : 'No'}</TableCell>
-                    <TableCell className="flex justify-end">
-                      <ProductManagementActions
-                        productToEdit={product}
-                        categories={initialCategories || []}
-                        onProductSubmitted={handleProductSubmitted}
-                      />
+        <CardContent className="px-0">
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-[850px] w-full table-auto rounded-md overflow-hidden">
+              <TableHeader className="bg-gray-50">
+                <TableRow>
+                  <TableHead className="w-[5%]">SN</TableHead>
+                  <TableHead className="w-[20%]">Name/Reference</TableHead>
+                  <TableHead className="w-[20%]">Category/Unit</TableHead>
+                  <TableHead className="w-[12%] text-right">Sale Price</TableHead>
+                  <TableHead className="w-[10%] text-center">Active</TableHead>
+                  <TableHead className="w-[13%] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {productsToDisplay && productsToDisplay.length > 0 ? (
+                  productsToDisplay.map((product, idx) => (
+                    <TableRow key={`product-row-${product.id}-${idx}`} className="hover:bg-gray-100 transition-colors">
+                      <TableCell>
+                        {isFiltered
+                          ? idx + 1
+                          : (currentPage - 1) * itemsPerPage + idx + 1}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <span className="block text-base">{product.name}</span>
+                        <span className="text-xs text-gray-500">({product.unique_reference})</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="block">{product.categories?.name || 'N/A'}</span>
+                        <span className="text-xs text-gray-500">({product.product_unit_abbreviation || 'N/A'})</span>
+                      </TableCell>
+                      <TableCell className="text-right font-extrabold text-lg">{formatCurrency(product.sale_price)}</TableCell>
+                      <TableCell className="text-center">
+                        <span className={product.is_active ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                          {product.is_active ? 'Yes' : 'No'}
+                        </span>
+                      </TableCell>
+                      <TableCell className="flex justify-end">
+                        <ProductManagementActions
+                          productToEdit={product}
+                          categories={initialCategories || []}
+                          onProductSubmitted={handleProductSubmitted}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center text-gray-500">
+                      No products found matching your criteria.
                     </TableCell>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
-                    No products found matching your criteria.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
-      </Card>
+      </section>
 
-      {/* Pagination */}
-      <Pagination
-        totalItems={totalItems}
-        itemsPerPage={itemsPerPage}
-        currentPage={currentPage}
-        onPageChange={handlePageChange}
-        onItemsPerPageChange={handleItemsPerPageChange}
-      />
-    </div> 
+      {/* --- Pagination --- */}
+      {!isFiltered && (
+        <div className="mt-8">
+          <Pagination
+            totalItems={totalItems}
+            itemsPerPage={itemsPerPage}
+            currentPage={currentPage}
+            onPageChange={handlePageChange}
+            onItemsPerPageChange={handleItemsPerPageChange}
+          />
+        </div>
+      )}
+    </div>
   );
-}
- 
+}    

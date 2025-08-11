@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import React from 'react';
 import PurchaseOverviewClient from './components/purchase-overview-client';
 import PurchaseActionsClient from './components/purchase-actions-client';
-import PurchasePaginationClient from './components/purchase-pagination-client';
 import { Card, CardContent } from '@/components/ui/card';
 
 type ProductForPurchaseItem = {
@@ -73,10 +72,8 @@ function mapToEditRecord(purchase?: PurchaseRecordForDisplay): PurchaseRecordFor
 }
 
 export default async function PurchaseManagementPage({
-  // Changed the type of searchParams to `any` to resolve the build error.
-  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: any) { // Changed from `{ searchParams?: Record<string, string> }` to `any`
+}: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -96,15 +93,13 @@ export default async function PurchaseManagementPage({
 
   const currentUserId = currentUserProfile.id;
 
-  const page = parseInt(searchParams?.page || "1", 10);
-  const itemsPerPage = parseInt(searchParams?.itemsPerPage || "10", 10);
-  const fromIdx = (page - 1) * itemsPerPage;
-  const toIdx = fromIdx + itemsPerPage - 1;
+  // REMOVE pagination logic
+  // const page = parseInt(searchParams?.page || "1", 10);
+  // const itemsPerPage = parseInt(searchParams?.itemsPerPage || "10", 10);
+  // const fromIdx = (page - 1) * itemsPerPage;
+  // const toIdx = fromIdx + itemsPerPage - 1;
 
-  const { count: totalPurchasesCount } = await supabase
-    .from('purchases')
-    .select('id', { count: 'exact', head: true });
-
+  // Fetch all purchases
   const { data: purchases, error: purchasesError } = await supabase
     .from('purchases')
     .select(`
@@ -116,7 +111,6 @@ export default async function PurchaseManagementPage({
       )
     `)
     .order('purchase_date', { ascending: false })
-    .range(fromIdx, toIdx)
     .returns<PurchaseRecordForDisplay[]>();
 
   if (purchasesError) console.error("Error fetching purchases:", purchasesError.message);
@@ -142,28 +136,21 @@ export default async function PurchaseManagementPage({
         <h1 className="text-3xl font-bold">Purchase Management</h1>
         <PurchaseActionsClient
           purchaseToEdit={purchaseToEdit}
+          editId={editId}
           products={productsForSelection ?? []}
           warehouses={warehouses ?? []}
           currentUserId={currentUserId}
           onPurchaseSubmitted={async () => { 'use server'; }}
         />
       </div>
-      
       <Card>
         <CardContent className="pt-6">
-            <PurchaseOverviewClient
-              initialPurchases={purchases ?? []}
-              initialWarehouses={warehouses ?? []}
-            />
-            <div className="flex justify-center mt-6">
-              <PurchasePaginationClient
-                totalItems={totalPurchasesCount ?? 0} 
-                itemsPerPage={itemsPerPage}
-                currentPage={page}
-              />
-            </div>
-        </CardContent>
+          <PurchaseOverviewClient
+            initialPurchases={purchases ?? []}
+            initialWarehouses={warehouses ?? []}
+          />
+        </CardContent>  
       </Card>
     </div>
   );
-} 
+}

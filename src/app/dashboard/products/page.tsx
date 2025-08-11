@@ -6,10 +6,8 @@ import { ProductItem, CategoryForProductForm } from './types';
 import ProductOverviewClient from './components/product-overview-client';
 
 export default async function ProductManagementPage({
-  // Changed the type of searchParams to `any` to resolve the build error.
-  // Next.js 15.x.x's internal type checking for PageProps is causing a conflict.
   searchParams,
-}: any) { // Changed from `{ searchParams?: { ... } }` to `any`
+}: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } = {} } = await supabase.auth.getUser();
 
@@ -27,6 +25,12 @@ export default async function ProductManagementPage({
     console.error("Access Denied: Unauthorized role trying to access Product Management.");
     redirect('/dashboard/overview');
   }
+
+  // Determine if any filter/search is active
+  const isFiltered =
+    (searchParams?.query && searchParams.query.trim() !== "") ||
+    (searchParams?.category && searchParams.category !== "all") ||
+    (searchParams?.active && searchParams.active !== "all");
 
   // Pagination params
   const page = Number(searchParams?.page) || 1;
@@ -56,7 +60,10 @@ export default async function ProductManagementPage({
     productsQuery = productsQuery.eq('is_active', searchParams.active === 'true');
   }
 
-  productsQuery = productsQuery.range(from, to);
+  // Only use pagination if NOT filtered
+  if (!isFiltered) {
+    productsQuery = productsQuery.range(from, to);
+  }
 
   const { data: products, error: productsError, count: totalItems } = await productsQuery.returns<ProductItem[]>();
   if (productsError) console.error("Error fetching products:", productsError.message);
@@ -82,9 +89,9 @@ export default async function ProductManagementPage({
           currentPage={page}
           itemsPerPage={limit}
           totalItems={totalItems || 0}
+          isFiltered={isFiltered} 
         />
       </div>
     </div>
   );
-}
- 
+}  

@@ -145,13 +145,19 @@ export default function ProductManagementActions({
     setIsLoading(true);
     let error = null;
 
-    // Prepare payload for Supabase
+    // Manually find the selected category to get its unit abbreviation.
+    const selectedCategory = categories.find(
+      (cat) => cat.id === values.category_id
+    );
+    const unitAbbreviation = selectedCategory?.unit_abbreviation || null;
+
+    // Prepare payload for Supabase, now including the correct unit.
     const payload = {
       name: values.name,
       unique_reference: values.unique_reference,
       description: values.description || null,
       category_id: values.category_id || null,
-      product_unit_abbreviation: values.product_unit_abbreviation || null,
+      product_unit_abbreviation: unitAbbreviation, // Use the variable we just created
       purchase_price: values.purchase_price,
       sale_price: values.sale_price,
       is_active: values.is_active,
@@ -519,5 +525,5 @@ export default function ProductManagementActions({
         </DialogContent>
       </Dialog>
     </>
-  );
-} 
+  );  
+}

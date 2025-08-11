@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { PlusCircle, XCircle } from "lucide-react";
+import { PlusCircle, XCircle, CalendarIcon } from "lucide-react";
 import {
   useForm,
   SubmitHandler,
@@ -34,7 +34,15 @@ import type {
   ProductForSaleItem,
   SaleRecordForEdit,
 } from "../types/sales";
+import { format } from "date-fns";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
+// --- Zod Schemas ---
 const saleItemFormSchema = z.object({
   tempId: z.string().uuid(),
   product_id: z.string().uuid({ message: "Product is required." }),
@@ -44,7 +52,7 @@ const saleItemFormSchema = z.object({
 });
 
 const saleFormSchema = z.object({
-  sale_date: z.string().min(1, { message: "Sale date is required." }),
+  sale_date: z.date(),
   cashier_id: z.string().uuid({ message: "Cashier is required." }).nullable(),
   branch_id: z.string().uuid({ message: "Branch is required." }).nullable(),
   customer_name: z.string().optional(),
@@ -100,11 +108,12 @@ export default function SaleEditModalClient({
   const { formatCurrency } = useCurrencyFormatter();
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- Form setup ---
   const form = useForm<SaleFormValues>({
     resolver: zodResolver(saleFormSchema),
     defaultValues: saleToEdit
       ? {
-          sale_date: saleToEdit.sale_date.split("T")[0],
+          sale_date: new Date(saleToEdit.sale_date),
           cashier_id: saleToEdit.cashier_id,
           branch_id: saleToEdit.branch_id,
           customer_name: saleToEdit.customer_name || "",
@@ -118,7 +127,7 @@ export default function SaleEditModalClient({
           items: normalizeItemsForForm(saleToEdit.sale_items),
         }
       : {
-          sale_date: new Date().toISOString().split("T")[0],
+          sale_date: new Date(),
           cashier_id: currentUserId,
           branch_id: null,
           customer_name: "",
@@ -155,54 +164,100 @@ export default function SaleEditModalClient({
     setIsLoading(true);
     let error: Error | null = null;
 
-    const saleItemsPayload = values.items.map((item) => ({
-      product_id: item.product_id,
-      quantity: item.quantity,
-      unit_sale_price: item.unit_sale_price,
-      total_price: item.quantity * item.unit_sale_price,
-      note: item.note,
-    }));
+    // Prepare sale payload (excluding items)
+    const salePayload = {
+      sale_date: format(values.sale_date, "yyyy-MM-dd"),
+      cashier_id: values.cashier_id,
+      branch_id: values.branch_id,
+      customer_name: values.customer_name || null,
+      customer_phone: values.customer_phone || null,
+      total_amount: overallTotalAmount,
+      payment_method: values.payment_method,
+      status: values.status,
+    };
 
     if (saleToEdit) {
+      // 1. Update sale record
       const { error: dbError } = await supabaseClient
         .from("sales")
-        .update({
-          sale_date: values.sale_date,
-          cashier_id: values.cashier_id,
-          branch_id: values.branch_id,
-          customer_name: values.customer_name || null,
-          customer_phone: values.customer_phone || null,
-          total_amount: overallTotalAmount,
-          payment_method: values.payment_method,
-          status: values.status,
-        })
+        .update(salePayload)
         .eq("id", saleToEdit.id);
       error = dbError;
 
       if (!error) {
-        await supabaseClient.from("sale_items").delete().eq("sale_id", saleToEdit.id);
-        const { error: itemsError } = await supabaseClient
+        // 2. Get current sale items from DB
+        const { data: currentItems, error: fetchError } = await supabaseClient
           .from("sale_items")
-          .insert(
-            saleItemsPayload.map((item) => ({
-              ...item,
-              sale_id: saleToEdit.id,
-            }))
+          .select("id, product_id, quantity, unit_sale_price, note")
+          .eq("sale_id", saleToEdit.id);
+
+        if (fetchError) {
+          error = fetchError;
+        } else {
+          // 3. Diff items
+          const formItems = values.items;
+          const dbItems = currentItems || [];
+
+          // a) Items to update (matching IDs)
+          const itemsToUpdate = formItems.filter(formItem =>
+            dbItems.some(dbItem => dbItem.id === formItem.tempId)
           );
-        error = itemsError;
+          // b) Items to insert (new tempId, not in DB)
+          const itemsToInsert = formItems.filter(formItem =>
+            !dbItems.some(dbItem => dbItem.id === formItem.tempId)
+          );
+          // c) Items to delete (in DB, not in form)
+          const itemsToDelete = dbItems.filter(dbItem =>
+            !formItems.some(formItem => formItem.tempId === dbItem.id)
+          );
+
+          // 4. Run updates, inserts, deletes
+          // a) Update existing items
+          for (const item of itemsToUpdate) {
+            const { error: updateError } = await supabaseClient
+              .from("sale_items")
+              .update({
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_sale_price: item.unit_sale_price,
+                total_price: item.quantity * item.unit_sale_price,
+                note: item.note,
+              })
+              .eq("id", item.tempId);
+            if (updateError) error = updateError;
+          }
+
+          // b) Insert new items
+          if (itemsToInsert.length > 0) {
+            const { error: insertError } = await supabaseClient
+              .from("sale_items")
+              .insert(itemsToInsert.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_sale_price: item.unit_sale_price,
+                total_price: item.quantity * item.unit_sale_price,
+                note: item.note,
+                sale_id: saleToEdit.id,
+              })));
+            if (insertError) error = insertError;
+          }
+
+          // c) Delete removed items
+          if (itemsToDelete.length > 0) {
+            const { error: deleteError } = await supabaseClient
+              .from("sale_items")
+              .delete()
+              .in("id", itemsToDelete.map(item => item.id));
+            if (deleteError) error = deleteError;
+          }
+        }
       }
     } else {
+      // Insert new sale
       const { data, error: dbError } = await supabaseClient
         .from("sales")
         .insert({
-          sale_date: values.sale_date,
-          cashier_id: values.cashier_id,
-          branch_id: values.branch_id,
-          customer_name: values.customer_name || null,
-          customer_phone: values.customer_phone || null,
-          total_amount: overallTotalAmount,
-          payment_method: values.payment_method,
-          status: values.status,
+          ...salePayload,
           transaction_reference: `POS-${new Date().getTime()}`,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -216,7 +271,14 @@ export default function SaleEditModalClient({
         const { error: itemsError } = await supabaseClient
           .from("sale_items")
           .insert(
-            saleItemsPayload.map((item) => ({ ...item, sale_id: saleId }))
+            values.items.map(item => ({
+              product_id: item.product_id,
+              quantity: item.quantity,
+              unit_sale_price: item.unit_sale_price,
+              total_price: item.quantity * item.unit_sale_price,
+              note: item.note,
+              sale_id: saleId,
+            }))
           );
         error = itemsError;
       }
@@ -242,7 +304,7 @@ export default function SaleEditModalClient({
       form.reset(
         saleToEdit
           ? {
-              sale_date: saleToEdit.sale_date.split("T")[0],
+              sale_date: new Date(saleToEdit.sale_date),
               cashier_id: saleToEdit.cashier_id,
               branch_id: saleToEdit.branch_id,
               customer_name: saleToEdit.customer_name || "",
@@ -257,7 +319,7 @@ export default function SaleEditModalClient({
               items: normalizeItemsForForm(saleToEdit.sale_items),
             }
           : {
-              sale_date: new Date().toISOString().split("T")[0],
+              sale_date: new Date(),
               cashier_id: currentUserId,
               branch_id: null,
               customer_name: "",
@@ -304,13 +366,31 @@ export default function SaleEditModalClient({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="grid gap-2">
               <Label htmlFor="sale_date" className="mb-2">Sale Date</Label>
-              <Input
-                id="sale_date"
-                type="datetime-local"
-                {...form.register("sale_date")}
-                disabled={isLoading}
-                value={form.watch("sale_date")}
-                onChange={e => form.setValue("sale_date", e.target.value)}
+              <Controller
+                control={form.control}
+                name="sale_date"
+                render={({ field }) => (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={`w-full pl-3 text-left font-normal ${!field.value ? "text-muted-foreground" : ""}`}
+                        disabled={isLoading}
+                      >
+                        {field.value ? format(field.value, "yyyy-MM-dd") : <span>Pick a date</span>}
+                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
               />
               {form.formState.errors.sale_date && <p className="text-red-500 text-sm mt-1">{form.formState.errors.sale_date.message}</p>}
             </div>
@@ -521,4 +601,4 @@ export default function SaleEditModalClient({
       </DialogContent>
     </Dialog>
   );
-}
+}  
