@@ -37,6 +37,16 @@ export type SaleRecord = {
   sale_items: SaleItemDetails[];
 };
 
+export type UserForSelect = {
+  id: string;
+  email: string;
+};
+
+export type BranchForSelect = {
+  id: string;
+  name: string;
+};
+
 export type SaleRecordForEdit = {
   id: string;
   sale_date: string;

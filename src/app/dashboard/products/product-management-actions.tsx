@@ -88,6 +88,15 @@ export default function ProductManagementActions({
   const [nameInput, setNameInput] = useState("");
   const [isNameFocused, setIsNameFocused] = useState(false);
 
+  // Responsive: detect mobile
+  const [isMobile, setIsMobile] = useState(false);
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema),
     defaultValues: {
@@ -271,14 +280,18 @@ export default function ProductManagementActions({
   return (
     <>
       {!productToEdit ? (
-        <Button onClick={openAddDialog}>
-          <PlusCircle className="mr-2 h-4 w-4" /> Add Product
+        <Button
+          onClick={openAddDialog}
+          className={`w-full sm:w-auto py-3 px-4 rounded-lg text-base flex items-center justify-center ${isMobile ? "mb-2" : ""}`}
+        >
+          <PlusCircle className="mr-2 h-5 w-5" /> Add Product
         </Button>
       ) : (
         <div className="flex items-center space-x-2">
           <Button
             variant="outline"
-            size="sm"
+            size={isMobile ? "default" : "sm"}
+            className={`rounded-lg ${isMobile ? "px-4 py-2" : ""}`}
             onClick={openEditDialog}
             title="Edit Product"
           >
@@ -286,7 +299,8 @@ export default function ProductManagementActions({
           </Button>
           <Button
             variant="destructive"
-            size="sm"
+            size={isMobile ? "default" : "sm"}
+            className={`rounded-lg ${isMobile ? "px-4 py-2" : ""}`}
             onClick={openDeleteConfirm}
             title="Delete Product"
           >
@@ -297,7 +311,7 @@ export default function ProductManagementActions({
 
       {/* Add/Edit Product Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-[500px] rounded-2xl">
           <DialogHeader>
             <DialogTitle>
               {!productToEdit
@@ -312,9 +326,10 @@ export default function ProductManagementActions({
           </DialogHeader>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="grid gap-4 py-4"
+            className="grid gap-4 py-2 sm:py-4"
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Responsive grid: 1 column on mobile, 2 on desktop */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2 relative">
                 <Label htmlFor="name">Name</Label>
                 <Input
@@ -325,6 +340,7 @@ export default function ProductManagementActions({
                   onBlur={handleNameBlur}
                   disabled={isLoading}
                   autoComplete="off"
+                  className="rounded-lg py-3"
                 />
                 {isNameFocused &&
                   getNameSuggestions(nameInput).length > 0 && (
@@ -352,6 +368,7 @@ export default function ProductManagementActions({
                   id="unique_reference"
                   {...form.register("unique_reference")}
                   disabled={isLoading}
+                  className="rounded-lg py-3"
                 />
                 {form.formState.errors.unique_reference && (
                   <p className="text-red-500 text-sm mt-1">
@@ -366,9 +383,10 @@ export default function ProductManagementActions({
                 id="description"
                 {...form.register("description")}
                 disabled={isLoading}
+                className="rounded-lg py-3"
               />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="category_id">Category</Label>
                 <Select
@@ -380,7 +398,7 @@ export default function ProductManagementActions({
                   value={form.watch("category_id")}
                   disabled={isLoading}
                 >
-                  <SelectTrigger id="category_id">
+                  <SelectTrigger id="category_id" className="rounded-lg py-3">
                     <SelectValue placeholder="Select Category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -403,6 +421,7 @@ export default function ProductManagementActions({
                   id="product_unit_abbreviation"
                   value={displayedUnitAbbreviation}
                   disabled
+                  className="rounded-lg py-3"
                 />
                 {form.formState.errors.product_unit_abbreviation && (
                   <p className="text-red-500 text-sm mt-1">
@@ -411,7 +430,7 @@ export default function ProductManagementActions({
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="purchase_price">Purchase Price</Label>
                 <Input
@@ -420,6 +439,7 @@ export default function ProductManagementActions({
                   step="0.01"
                   {...form.register("purchase_price", { valueAsNumber: true })}
                   disabled={isLoading}
+                  className="rounded-lg py-3"
                 />
                 {form.formState.errors.purchase_price && (
                   <p className="text-red-500 text-sm mt-1">
@@ -435,6 +455,7 @@ export default function ProductManagementActions({
                   step="0.01"
                   {...form.register("sale_price", { valueAsNumber: true })}
                   disabled={isLoading}
+                  className="rounded-lg py-3"
                 />
                 {form.formState.errors.sale_price && (
                   <p className="text-red-500 text-sm mt-1">
@@ -443,7 +464,7 @@ export default function ProductManagementActions({
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="low_stock_threshold">Low Stock Threshold</Label>
                 <Input
@@ -452,6 +473,7 @@ export default function ProductManagementActions({
                   step="1"
                   {...form.register("low_stock_threshold", { valueAsNumber: true })}
                   disabled={isLoading}
+                  className="rounded-lg py-3"
                 />
                 {form.formState.errors.low_stock_threshold && (
                   <p className="text-red-500 text-sm mt-1">
@@ -466,6 +488,7 @@ export default function ProductManagementActions({
                   type="url"
                   {...form.register("image_url")}
                   disabled={isLoading}
+                  className="rounded-lg py-3"
                 />
                 {form.formState.errors.image_url && (
                   <p className="text-red-500 text-sm mt-1">
@@ -474,7 +497,7 @@ export default function ProductManagementActions({
                 )}
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 mt-1">
               <input
                 type="checkbox"
                 id="is_active"
@@ -484,7 +507,11 @@ export default function ProductManagementActions({
               <Label htmlFor="is_active">Is Active</Label>
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={isLoading}>
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3 rounded-lg text-base"
+              >
                 {isLoading
                   ? !productToEdit
                     ? "Adding Product..."
@@ -500,7 +527,7 @@ export default function ProductManagementActions({
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
-        <DialogContent>
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle>Confirm Deletion</DialogTitle>
             <DialogDescription>
@@ -511,6 +538,7 @@ export default function ProductManagementActions({
             <Button
               variant="outline"
               onClick={() => setIsConfirmDeleteOpen(false)}
+              className="w-1/2 py-3 rounded-lg text-base"
             >
               Cancel
             </Button>
@@ -518,12 +546,23 @@ export default function ProductManagementActions({
               variant="destructive"
               onClick={handleDelete}
               disabled={isLoading}
+              className="w-1/2 py-3 rounded-lg text-base"
             >
               {isLoading ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <style jsx>{`
+        @media (max-width: 640px) {
+          .DialogContent,
+          .DialogFooter,
+          .DialogHeader {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+          }
+        }
+      `}</style>
     </>
-  );  
-}
+  );
+}  

@@ -1,29 +1,14 @@
 "use client";
 
 import React from "react";
-import ProductManagementActions from "../product-management-actions";
-import { CategoryForProductForm } from "../types";
-import { useRouter } from "next/navigation";
 
-interface Props {
-  categories: CategoryForProductForm[];
-}
-
-export default function ProductManagementHeader({ categories }: Props) {
-  const router = useRouter();
-
-  // Client-side callback to refresh data after add/edit/delete
-  function handleProductSubmitted() {
-    router.refresh();
-  }
-
+export default function ProductManagementHeader() {
   return (
-    <div className="flex justify-between items-center mb-6">
-      <h1 className="text-3xl font-bold">Product Management</h1>
-      <ProductManagementActions
-        categories={categories}
-        onProductSubmitted={handleProductSubmitted}
-      />
+    <div className="mb-6">
+      {/* Responsive flex container */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 w-full">
+        <h1 className="text-3xl font-bold">Product Management</h1>
+      </div>
     </div>
   );
-}
+}   

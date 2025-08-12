@@ -6,14 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, DollarSign, Package, TrendingUp, Banknote, ShoppingCart, Warehouse, LineChart as LineChartIcon, BarChart2 as BarChartIcon } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
 import { useCurrencyFormatter } from '@/lib/formatters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-// --- Charting ---
 import {
   LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Legend
 } from 'recharts';
@@ -41,16 +40,15 @@ interface BranchChartDatum {
 
 interface DashboardOverviewClientProps {
   allSalesData: SaleData[];
-  allPurchasesData: PurchaseData[]; // Will be removed from usage
+  allPurchasesData: PurchaseData[];
   allExternalSalesData: ExternalSaleData[];
   allExpensesData: ExpenseData[];
   allStockData: StockData[];
-  allBranches: BranchData[]; // Will be removed from usage
+  allBranches: BranchData[];
   initialStartDate: string;
   initialEndDate: string;
 }
 
-// --- Utility functions ---
 function groupByTimeframe(data: Array<{ date: string; amount: number }>, timeframe: 'day' | 'week' | 'month'): RevenueChartDatum[] {
   const map: Record<string, number> = {};
   data.forEach(({ date, amount }) => {
@@ -72,7 +70,6 @@ function groupBranchTotals(data: Array<{ branch_id: string; branch_name: string;
 
 export default function DashboardOverviewClient({
   allSalesData,
-
   allExternalSalesData,
   allExpensesData,
   allStockData,
@@ -119,11 +116,9 @@ export default function DashboardOverviewClient({
     const netProfit = totalRevenue - totalCOGS - totalExpensesAmount;
 
     let totalInventoryValue = 0;
-    const totalUniqueProductsInStock = new Set<string>();
     allStockData.forEach(stock => {
       if (stock.products) {
         totalInventoryValue += stock.quantity * (stock.products.purchase_price || 0);
-        totalUniqueProductsInStock.add(stock.product_id);
       }
     });
 
@@ -132,7 +127,6 @@ export default function DashboardOverviewClient({
       net_profit: netProfit,
       total_sales_count: totalSalesCount,
       total_inventory_value: totalInventoryValue,
-      total_unique_products_in_stock: totalUniqueProductsInStock.size,
     };
   }, [allSalesData, allExternalSalesData, allExpensesData, allStockData, startDate, endDate]);
 
@@ -173,113 +167,102 @@ export default function DashboardOverviewClient({
   }, [allStockData]);
 
   return (
-    <div className="p-4 md:p-8 space-y-8 bg-gray-50 min-h-screen">
+    <div className="px-2 md:px-4 lg:px-8 py-4 space-y-8 bg-gray-50 min-h-screen w-full max-w-screen-xl mx-auto">
       {/* --- Filter Controls --- */}
-      <Card className="p-4 shadow-sm">
+      <Card className="p-4 shadow-sm w-full">
         <div className="flex flex-wrap items-end gap-4">
-            <div className="grid gap-1.5">
-                <Label htmlFor="date_from_dashboard">Date From</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                    <Button variant={"outline"} className={cn("w-[200px] justify-start text-left font-normal", !startDate && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {startDate ? format(startDate, "PPP") : <span>Pick a date</span>}
-                    </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={startDate} onSelect={(d) => d && setStartDate(d)} initialFocus />
-                    </PopoverContent>
-                </Popover>
-            </div>
-            <div className="grid gap-1.5">
-                <Label htmlFor="date_to_dashboard">Date To</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                    <Button variant={"outline"} className={cn("w-[200px] justify-start text-left font-normal", !endDate && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {endDate ? format(endDate, "PPP") : <span>Pick a date</span>}
-                    </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={endDate} onSelect={(d) => d && setEndDate(d)} initialFocus />
-                    </PopoverContent>
-                </Popover>
-            </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="date_from_dashboard">Date From</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant={"outline"} className={cn("w-[160px] sm:w-[200px] justify-start text-left font-normal", !startDate && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {startDate ? format(startDate, "PPP") : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={startDate} onSelect={(d) => d && setStartDate(d)} initialFocus />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="date_to_dashboard">Date To</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant={"outline"} className={cn("w-[160px] sm:w-[200px] justify-start text-left font-normal", !endDate && "text-muted-foreground")}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {endDate ? format(endDate, "PPP") : <span>Pick a date</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={endDate} onSelect={(d) => d && setEndDate(d)} initialFocus />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       </Card>
 
       {/* --- Summary Cards --- */}
-      <div>
+      <div className="w-full">
         <h2 className="text-2xl font-bold tracking-tight text-gray-800 mb-4">Key Performance Indicators</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">{formatCurrency(dashboardSummary.total_revenue)}</div>
-                    <p className="text-xs text-muted-foreground">Sales income in selected period</p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
-                    <Banknote className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className={cn("text-2xl font-bold", dashboardSummary.net_profit >= 0 ? "text-green-600" : "text-red-600")}>
-                    {formatCurrency(dashboardSummary.net_profit)}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Revenue - COGS - Expenses</p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-                    <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">{dashboardSummary.total_sales_count}</div>
-                    <p className="text-xs text-muted-foreground">Transactions in period</p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Inventory Value</CardTitle>
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">{formatCurrency(dashboardSummary.total_inventory_value)}</div>
-                    <p className="text-xs text-muted-foreground">Cost of all products in stock</p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Product SKUs</CardTitle>
-                    <Package className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">{dashboardSummary.total_unique_products_in_stock}</div>
-                    <p className="text-xs text-muted-foreground">Unique products with stock</p>
-                </CardContent>
-            </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6 w-full md:grid-rows-2 lg:grid-rows-2 xl:grid-rows-2">
+          <Card className="w-full min-w-[220px] bg-white rounded-xl shadow-sm border flex flex-col justify-between">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-medium text-gray-600">Total Revenue</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-gray-900 break-words">
+                {formatCurrency(dashboardSummary.total_revenue)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Sales income in selected period</p>
+            </CardContent>
+          </Card>
+          <Card className="w-full min-w-[220px] bg-white rounded-xl shadow-sm border flex flex-col justify-between">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-medium text-gray-600">Net Profit</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold" style={{ color: dashboardSummary.net_profit >= 0 ? "#16a34a" : "#dc2626" }}>
+                {formatCurrency(dashboardSummary.net_profit)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Revenue - COGS - Expenses</p>
+            </CardContent>
+          </Card>
+          <Card className="w-full min-w-[220px] bg-white rounded-xl shadow-sm border flex flex-col justify-between">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-medium text-gray-600">Total Sales</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-gray-900 break-words">{dashboardSummary.total_sales_count}</div>
+              <p className="text-xs text-muted-foreground mt-1">Transactions in period</p>
+            </CardContent>
+          </Card>
+          <Card className="w-full min-w-[220px] bg-white rounded-xl shadow-sm border flex flex-col justify-between">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-medium text-gray-600">Inventory Value</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-gray-900 break-words">
+                {formatCurrency(dashboardSummary.total_inventory_value)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Cost of all products in stock</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       {/* --- Revenue Trends Chart Section --- */}
       <div className="w-full">
-        <Card className="shadow-lg rounded-xl">
-            <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-6">
+        <Card className="shadow-lg rounded-xl w-full">
+            <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 sm:p-6">
                 <div className="mb-4 sm:mb-0">
                     <CardTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                        <LineChartIcon className="h-6 w-6 text-indigo-600" />
                         Revenue Trends
                     </CardTitle>
                     <CardDescription>Track sales income over the selected period.</CardDescription>
                 </div>
                 <Select onValueChange={(value: 'day' | 'week' | 'month') => setRevenueChartTimeframe(value)} value={revenueChartTimeframe}>
-                    <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-[120px] sm:w-[140px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value="day">By Day</SelectItem>
                         <SelectItem value="week">By Week</SelectItem>
@@ -287,12 +270,12 @@ export default function DashboardOverviewClient({
                     </SelectContent>
                 </Select>
             </CardHeader>
-            <CardContent className="p-6 pt-0">
-                <div className="h-80 w-full">
+            <CardContent className="p-2 sm:p-6 pt-0 w-full">
+                <div className="h-64 sm:h-80 w-full overflow-x-auto">
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart
                           data={revenueChartData}
-                          margin={{ top: 5, right: 20, left: 20, bottom: 35 }}
+                          margin={{ top: 5, right: 20, left: 0, bottom: 35 }}
                         >
                             <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
                             <XAxis
@@ -303,7 +286,7 @@ export default function DashboardOverviewClient({
                                 angle={-25}
                                 textAnchor="end"
                                 minTickGap={0}
-                                padding={{ left: 15, right: 15 }}
+                                padding={{ left: 10, right: 10 }}
                                 height={50}
                             />
                             <YAxis
@@ -312,7 +295,7 @@ export default function DashboardOverviewClient({
                                 tickFormatter={(value) => formatCurrency(Number(value))}
                                 allowDecimals={false}
                                 domain={['auto', 'auto']}
-                                width={90}
+                                width={70}
                             />
                             <Tooltip
                                 contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem' }}
@@ -330,20 +313,19 @@ export default function DashboardOverviewClient({
 
       {/* --- Branch Performance Chart Section --- */}
       <div className="w-full">
-        <Card className="shadow-lg rounded-xl">
-            <CardHeader className="p-6">
+        <Card className="shadow-lg rounded-xl w-full">
+            <CardHeader className="p-4 sm:p-6">
                 <CardTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <BarChartIcon className="h-6 w-6 text-green-600" />
                     Performance by Branch
                 </CardTitle>
                 <CardDescription>Compare total revenue across different branches for the selected period.</CardDescription>
             </CardHeader>
-            <CardContent className="p-6 pt-0">
-                <div className="h-80 w-full">
+            <CardContent className="p-2 sm:p-6 pt-0 w-full">
+                <div className="h-64 sm:h-80 w-full overflow-x-auto">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                           data={branchPerformanceChartData}
-                          margin={{ top: 5, right: 20, left: 20, bottom: 35 }}
+                          margin={{ top: 5, right: 20, left: 0, bottom: 35 }}
                         >
                             <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
                             <XAxis
@@ -354,7 +336,7 @@ export default function DashboardOverviewClient({
                                 angle={-25}
                                 textAnchor="end"
                                 minTickGap={0}
-                                padding={{ left: 15, right: 15 }}
+                                padding={{ left: 10, right: 10 }}
                                 height={50}
                             />
                             <YAxis
@@ -363,7 +345,7 @@ export default function DashboardOverviewClient({
                                 tickFormatter={(value) => formatCurrency(Number(value))}
                                 allowDecimals={false}
                                 domain={['auto', 'auto']}
-                                width={90}
+                                width={70}
                             />
                             <Tooltip
                                 contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem' }}
@@ -380,14 +362,14 @@ export default function DashboardOverviewClient({
       </div>
 
       {/* --- Warehouse Breakdown Section --- */}
-      <div>
+      <div className="w-full">
         <h2 className="text-2xl font-bold tracking-tight text-gray-800 mb-4">Inventory by Warehouse</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
             {warehouseBreakdown.length > 0 ? (
             warehouseBreakdown.map(warehouse => (
-                <Card key={warehouse.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow">
+                <Card key={warehouse.id} className="flex flex-col shadow-sm hover:shadow-md transition-shadow w-full">
                 <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2"><Warehouse className="h-5 w-5 text-muted-foreground" /> {warehouse.name}</CardTitle>
+                    <CardTitle className="text-lg flex items-center gap-2">{warehouse.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex-grow">
                     <div className="space-y-2">
@@ -405,5 +387,4 @@ export default function DashboardOverviewClient({
       </div>
     </div>
   );
-}
- 
+}  

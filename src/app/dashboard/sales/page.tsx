@@ -1,19 +1,14 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import SalesFilterActions from './sales-filter-actions';
 import SaleTableRowClient from './sale-table-row-client';
 import SalesSummaryCards from './components/sales-summary-cards';
-import { Separator } from '@/components/ui/separator';
 import PaginationWrapper from './components/pagination-wrapper';
+import { Separator } from '@/components/ui/separator';
+
+// Dynamic import for mobile accordion client component (client only)
+import SalesMobileAccordionClient from "./components/sales-mobile-accordion-dynamic";
 
 import type {
   ProductForSaleItem,
@@ -23,6 +18,7 @@ import type {
   ExternalSaleRecord,
 } from './types/sales';
 
+// --- RAW TYPES ---
 type SaleRecordRaw = Omit<SaleRecord, 'users' | 'branches' | 'sale_items'> & {
   users: { id: string; email: string }[] | { id: string; email: string } | null;
   branches: { id: string; name: string }[] | { id: string; name: string } | null;
@@ -36,7 +32,6 @@ type ExternalSaleRecordRaw = Omit<ExternalSaleRecord, 'users' | 'branches' | 'ex
   branch: { id: string; name: string } | { id: string; name: string }[] | null;
 };
 
-// Helper to detect if any filter is active
 function isFilterActive(params: Record<string, string | null>): boolean {
   return !!(
     (params.dateFrom && params.dateFrom !== '') ||
@@ -48,19 +43,13 @@ function isFilterActive(params: Record<string, string | null>): boolean {
   );
 }
 
-export default async function SalesPage({
-  searchParams,
-}: any) {
+export default async function SalesPage({ searchParams }: any) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/');
 
   const { data: currentUserProfile, error: profileError } = await supabase
-    .from('users')
-    .select('role, branch_id, id')
-    .eq('id', user.id)
-    .single();
-
+    .from('users').select('role, branch_id, id').eq('id', user.id).single();
   if (profileError || !['admin', 'general_manager', 'branch_manager', 'cashier'].includes(currentUserProfile?.role || '')) {
     redirect('/dashboard/overview');
   }
@@ -90,7 +79,7 @@ export default async function SalesPage({
 
   // --- Determine if filter is active ---
   const filterActive: boolean = isFilterActive({
-    dateFrom, dateTo, branchId, status, saleType, search
+    dateFrom, dateTo, branchId, status, saleType, search,
   });
 
   // --- Queries for paginated table data ---
@@ -167,11 +156,9 @@ export default async function SalesPage({
   let filterByCompletedNoPurchase = false;
   if (status && status !== 'all') {
     if (status === 'completed_no_purchase') {
-      // Only external sales: completed or held
       externalSalesQuery = externalSalesQuery.in('status', ['completed', 'held']);
       externalSalesSummaryQuery = externalSalesSummaryQuery.in('status', ['completed', 'held']);
       filterByCompletedNoPurchase = true;
-      // Don't filter salesQuery/salesSummaryQuery
     } else {
       salesQuery = salesQuery.eq('status', status);
       externalSalesQuery = externalSalesQuery.eq('status', status);
@@ -205,7 +192,6 @@ export default async function SalesPage({
       externalSalesQuery = externalSalesQuery.range(fromIdx, toIdx);
     }
   }
-  // If filterActive, do NOT apply .range (pagination) to queries!
 
   // --- Fetch summary (unpaginated, filtered) data for summary cards ---
   let summarySales: SaleRecord[] = [];
@@ -214,7 +200,7 @@ export default async function SalesPage({
   if (!saleType || saleType === 'all') {
     const [{ data: summarySalesRaw }, { data: summaryExternalSalesRaw }] = await Promise.all([
       salesSummaryQuery,
-      externalSalesSummaryQuery
+      externalSalesSummaryQuery,
     ]);
     summarySales = (summarySalesRaw ?? []).map((s: SaleRecordRaw) => ({
       ...s,
@@ -236,7 +222,6 @@ export default async function SalesPage({
         : (s.external_sale_items ? [s.external_sale_items] : []),
     }));
 
-    // Special filter for orange "completed_no_purchase"
     if (filterByCompletedNoPurchase) {
       summaryExternalSales = summaryExternalSales.filter(sale =>
         sale.external_sale_items.some(item => item.unit_purchase_price_negotiated === 0)
@@ -297,7 +282,7 @@ export default async function SalesPage({
   if (!saleType || saleType === 'all') {
     const [{ data: salesRaw }, { data: externalSalesRaw }] = await Promise.all([
       salesQuery,
-      externalSalesQuery
+      externalSalesQuery,
     ]);
     sales = (salesRaw ?? []).map((s: SaleRecordRaw) => ({
       ...s,
@@ -379,7 +364,6 @@ export default async function SalesPage({
   // --- totalItems for pagination (from summary) ---
   let totalItems = allSummarySales.length;
   if (!filterActive) {
-    // Get real count from DB for paginated view
     const [{ count: regularCount }, { count: externalCount }] = await Promise.all([
       supabase.from('sales').select('id', { count: 'exact', head: true }),
       supabase.from('external_sales').select('id', { count: 'exact', head: true }),
@@ -399,78 +383,122 @@ export default async function SalesPage({
       <Separator className="mb-4 sm:mb-8" />
 
       {/* --- Filters Section --- */}
-      <section className="bg-white rounded-xl shadow-md mb-4 sm:mb-8 px-2 sm:px-6 py-4 sm:py-8">
-        <SalesFilterActions
-          branches={branchesForSelect ?? []}
-          searchParams={searchParams ?? {}}
-        />
+      <section className="mb-4 sm:mb-8">
+        <div className="hidden sm:block bg-white rounded-xl shadow-md px-6 py-6 mb-4">
+          <SalesFilterActions
+            branches={branchesForSelect ?? []}
+            searchParams={searchParams ?? {}}
+          />
+        </div>
+        <div className="sm:hidden px-2">
+          <SalesFilterActions
+            branches={branchesForSelect ?? []}
+            searchParams={searchParams ?? {}}
+            mobileMode={true}
+          />
+        </div>
       </section>
 
       {/* --- Summary Cards Section --- */}
-      <section className="bg-white rounded-xl shadow-md mb-4 sm:mb-8 px-2 sm:px-6 py-4 sm:py-8">
-        {/* Responsive: stack vertically on mobile */}
-        <div className="flex flex-col sm:flex-row gap-4">
+      <section className="mb-6">
+        <div className="hidden sm:block w-full">
           <SalesSummaryCards
             totalSales={allSummarySales.length}
             totalSaleIncome={totalOverallSalesIncome}
             netProfit={totalNetProfit}
           />
         </div>
+        <div className="sm:hidden w-full">
+          <SalesSummaryCards
+            totalSales={allSummarySales.length}
+            totalSaleIncome={totalOverallSalesIncome}
+            netProfit={totalNetProfit}
+            mobileMode={true}
+          />
+        </div>
       </section>
 
-      {/* --- Main Table Container --- */}
-      <section className="bg-white rounded-xl shadow-lg p-0 sm:p-8">
-        {/* --- Sales Table --- */}
-        <div className="mb-8 overflow-x-auto">
-          <Table className="min-w-full w-full table-auto rounded-md overflow-hidden">
-            <TableHeader className="bg-gray-50 hidden sm:table-header-group">
-              <TableRow>
-                <TableHead className="w-[5%]">SN</TableHead>
-                <TableHead className="w-[13%]">Date</TableHead>
-                <TableHead className="w-[13%]">Ref.</TableHead>
-                <TableHead className="w-[12%]">Branch</TableHead>
-                <TableHead className="w-[10%]">Sale Type</TableHead>
-                <TableHead className="w-[10%]">Customer</TableHead>
-                <TableHead className="w-[12%]">Amount</TableHead>
-                <TableHead className="w-[10%]">Status</TableHead>
-                <TableHead className="w-[15%] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {allSales.length > 0 ? (
-                allSales.map((sale, idx) => (
-                  <SaleTableRowClient
-                    key={sale.id}
-                    sale={sale}
-                    idx={idx}
-                    allBranches={[...(branchesForSelect ?? [])]}
-                    allProducts={[...(productsForSelection ?? [])]}
-                    allCashiers={[...(cashiersForSelect ?? [])]}
-                    currentUserId={currentUserProfile.id}
-                  />
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center text-gray-500">
-                    No sales records found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* --- Pagination: only show if NOT filtered --- */}
-        {!filterActive && (
-          <div className="flex justify-center pb-4 sm:pb-8">
-            <PaginationWrapper
-              totalItems={totalItems}
+      {/* --- Sales List/Card/Accordion --- */}
+      <section className="mb-6">
+        {/* MOBILE: Cards/Accordion with SN and functional actions */}
+        <div className="sm:hidden space-y-4 px-2">
+          {allSales.length > 0 ? (
+            <SalesMobileAccordionClient
+              allSales={allSales}
+              page={page}
               itemsPerPage={itemsPerPage}
-              currentPage={page}
+              branchesForSelect={branchesForSelect ?? []}
+              productsForSelection={productsForSelection ?? []}
+              cashiersForSelect={cashiersForSelect ?? []}
+              currentUserId={currentUserProfile.id}
             />
-          </div>
-        )}
+          ) : (
+            <div className="bg-white rounded-lg shadow px-3 py-6 text-center text-gray-500">
+              No sales records found.
+            </div>
+          )}
+          {/* Pagination for mobile */}
+          {!filterActive && (
+            <div className="flex justify-center py-6">
+              <PaginationWrapper
+                totalItems={totalItems}
+                itemsPerPage={itemsPerPage}
+                currentPage={page}
+              />
+            </div>
+          )}
+        </div>
+        {/* DESKTOP: Table */}
+        <div className="hidden sm:block overflow-x-auto">
+          <section className="bg-white rounded-xl shadow-lg p-0 sm:p-8">
+            <table className="min-w-full w-full table-auto rounded-md overflow-hidden">
+              <thead>
+                <tr>
+                  <th className="w-[5%] text-left p-3">SN</th>
+                  <th className="w-[13%] text-left p-3">Date</th>
+                  <th className="w-[13%] text-left p-3">Ref.</th>
+                  <th className="w-[12%] text-left p-3">Branch</th>
+                  <th className="w-[10%] text-left p-3">Sale Type</th>
+                  <th className="w-[10%] text-left p-3">Customer</th>
+                  <th className="w-[12%] text-left p-3">Amount</th>
+                  <th className="w-[10%] text-left p-3">Status</th>
+                  <th className="w-[15%] text-right p-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allSales.length > 0 ? (
+                  allSales.map((sale, idx) => (
+                    <SaleTableRowClient
+                      key={sale.id}
+                      sale={sale}
+                      idx={(page - 1) * itemsPerPage + idx}
+                      allBranches={[...(branchesForSelect ?? [])]}
+                      allProducts={[...(productsForSelection ?? [])]}
+                      allCashiers={[...(cashiersForSelect ?? [])]}
+                      currentUserId={currentUserProfile.id}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="h-24 text-center text-gray-500">
+                      No sales records found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            {!filterActive && (
+              <div className="flex justify-center pb-4 sm:pb-8">
+                <PaginationWrapper
+                  totalItems={totalItems}
+                  itemsPerPage={itemsPerPage}
+                  currentPage={page}
+                />
+              </div>
+            )}
+          </section>
+        </div>
       </section>
     </div>
   );
-}  
+}   

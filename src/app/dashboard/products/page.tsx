@@ -76,22 +76,22 @@ export default async function ProductManagementPage({
   if (categoriesError) console.error("Error fetching categories:", categoriesError.message);
 
   return (
-    <div className="p-8">
+    <div className="min-h-screen w-full bg-gray-50">
       {/* --- Title/Filter Section --- */}
-      <div className="rounded-lg px-8 py-8 mb-8">
-        <ProductManagementHeader categories={categories || []} />
-      </div>
+      <div className="w-full px-2 sm:px-8 py-8">
+  <ProductManagementHeader />
+</div>   
       {/* --- Product Table/Overview Section --- */}
-      <div className="bg-white rounded-lg shadow-md px-8 py-8">
+      <div className="w-full">
         <ProductOverviewClient
           initialProducts={products || []}
           initialCategories={categories || []}
           currentPage={page}
           itemsPerPage={limit}
           totalItems={totalItems || 0}
-          isFiltered={isFiltered} 
+          isFiltered={isFiltered}
         />
       </div>
     </div>
   );
-}  
+}   

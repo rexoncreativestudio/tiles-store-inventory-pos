@@ -1,3 +1,5 @@
+// src/app/(dashboard)/dashboard/overview/page.tsx
+
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import React from 'react';
@@ -21,19 +23,19 @@ export default async function DashboardOverviewPage({
     redirect('/');
   }
 
+  // ... (data fetching logic remains the same) ...
+
   const { data: currentUserProfile, error: profileError } = await supabase
     .from('users')
     .select('id, email, role, branch_id')
     .eq('id', user.id)
     .single();
 
-  // Only allow these roles here
   const allowedRoles = [
     'admin',
     'general_manager',
     'branch_manager',
     'cashier',
-    // REMOVE: 'stock_manager', 'stock_controller'
   ];
 
   if (profileError || !currentUserProfile || !allowedRoles.includes(currentUserProfile?.role || '')) {
@@ -42,9 +44,9 @@ export default async function DashboardOverviewPage({
   }
 
   const endDate = searchParams?.dateTo ? new Date(searchParams.dateTo) : new Date();
-  const startDate = searchParams?.dateFrom ? new Date(searchParams.dateFrom) : new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() - 30);
+  const startDate = searchParams?.dateFrom ? new Date(searchParams.dateFrom) : new Date(new Date().setDate(endDate.getDate() - 30));
 
-  // Fetch all Sales data
+
   const { data: allSalesData, error: salesError } = await supabase
     .from('sales')
     .select(`
@@ -58,7 +60,6 @@ export default async function DashboardOverviewPage({
 
   if (salesError) console.error("Error fetching sales for dashboard:", salesError.message);
 
-  // Fetch all External Sales data
   const { data: allExternalSalesData, error: externalSalesError } = await supabase
     .from('external_sales')
     .select(`
@@ -72,7 +73,6 @@ export default async function DashboardOverviewPage({
 
   if (externalSalesError) console.error("Error fetching external sales for dashboard:", externalSalesError.message);
 
-  // Fetches all expenses including the joined user data, consistent with other pages.
   const { data: allExpensesData, error: expensesError } = await supabase
     .from('expenses')
     .select(`
@@ -86,7 +86,6 @@ export default async function DashboardOverviewPage({
 
   if (expensesError) console.error("Error fetching expenses for dashboard:", expensesError.message);
 
-  // Fetch all Stock data
   const { data: allStockData, error: stockError } = await supabase
     .from('stock')
     .select(`
@@ -99,8 +98,11 @@ export default async function DashboardOverviewPage({
   if (stockError) console.error("Error fetching stock data for dashboard inventory:", stockError.message);
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-6">Dashboard Overview</h1>
+    // The main container is simplified. Spacing is handled by the client component.
+    <div className="flex-1 w-full">
+      <div className="flex items-center justify-between space-y-2 pb-4">
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard Overview</h1>
+      </div>
       <Separator className="mb-6" />
 
       <DashboardOverviewClient
@@ -110,7 +112,7 @@ export default async function DashboardOverviewPage({
         allStockData={allStockData || []}
         initialStartDate={startDate.toISOString()}
         initialEndDate={endDate.toISOString()}
-      /> 
+      />   
     </div>
-  );
-} 
+  );  
+}

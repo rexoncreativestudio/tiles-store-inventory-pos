@@ -113,14 +113,19 @@
 }
 
 @layer base {
-  * {
+  *, *::before, *::after {
+    box-sizing: border-box;
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    margin: 0;
+    padding: 0;
   }
 }
-
 
 :root {
   --receipt-font-size: 13px; /* Change this value to adjust all receipt font sizes */

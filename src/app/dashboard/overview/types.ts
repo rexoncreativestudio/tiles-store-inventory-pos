@@ -1,5 +1,3 @@
-// src/app/dashboard/overview/types.ts
-
 // --- Basic Data Types from DB ---
 
 export type UserProfile = {
@@ -87,7 +85,7 @@ export type DashboardSummaryCards = {
   net_profit: number;
   total_sales_count: number;
   total_inventory_value: number;
-  total_unique_products_in_stock: number;
+  // REMOVED: total_unique_products_in_stock
 };
 
 export type WarehouseBreakdownItem = {
@@ -96,4 +94,4 @@ export type WarehouseBreakdownItem = {
   total_inventory_cost: number;
   product_count: number;
   total_stock_quantity: number;
-};
+};  
