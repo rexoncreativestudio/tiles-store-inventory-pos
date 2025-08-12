@@ -120,6 +120,13 @@ function getTilesCategoryId(categories: CategoryForPos[]): string | null {
   return found?.id ?? null;
 }
 
+// Helper to get unit abbreviation for category id
+function getUnitAbbreviationForCategory(categories: CategoryForPos[], categoryId: string | null): string {
+  if (!categoryId) return "";
+  const found = categories.find(cat => cat.id === categoryId);
+  return found?.unit_abbreviation ?? "";
+}
+
 export default function ExternalSaleDialog({
   open,
   onOpenChange,
@@ -136,6 +143,7 @@ export default function ExternalSaleDialog({
 
   // --- Fix: Avoid duplicate "date" property and ensure it's always present as a Date ---
   const defaultFormValues = useMemo<ExternalSaleFormValues>(() => {
+    const tilesCategoryId = getTilesCategoryId(categories);
     const base: ExternalSaleFormValues = {
       customerName: "",
       customerPhone: "",
@@ -150,13 +158,16 @@ export default function ExternalSaleDialog({
     if (!base.date || isNaN(new Date(base.date).getTime())) {
       base.date = new Date();
     }
-    // Ensure default category for each item (Tiles)
-    const tilesCategoryId = getTilesCategoryId(categories);
+    // Ensure default category for each item (Tiles) AND set unit name
     if (base.items && Array.isArray(base.items)) {
-      base.items = base.items.map(item => ({
-        ...item,
-        product_category_id: item.product_category_id ?? tilesCategoryId,
-      }));
+      base.items = base.items.map(item => {
+        const catId = item.product_category_id ?? tilesCategoryId;
+        return {
+          ...item,
+          product_category_id: catId,
+          product_unit_name: item.product_unit_name ?? getUnitAbbreviationForCategory(categories, catId),
+        };
+      });
     }
     return base;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,9 +246,30 @@ export default function ExternalSaleDialog({
     }
   }, [open, dateValue, setValue]);
 
+  // Ensure that each item's category change updates the unit name accordingly
+  useEffect(() => {
+    watchedItems?.forEach((item, idx) => {
+      // Only set unit if category is defined and unit is blank or outdated
+      const currentCatId = item.product_category_id;
+      const expectedUnit = getUnitAbbreviationForCategory(categories, currentCatId);
+      if ((item.product_unit_name ?? "") !== expectedUnit) {
+        setValue(`items.${idx}.product_unit_name`, expectedUnit, { shouldValidate: true });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories, watchedItems?.map(i => i.product_category_id).join(",")]);
+
   // --- Submit Handler ---
   const handleFormSubmit: SubmitHandler<ExternalSaleFormValues> = (values) => {
-    onSubmit(values);
+    // Before submit, ensure unit names are up to date for each category
+    const patched = {
+      ...values,
+      items: values.items.map(item => ({
+        ...item,
+        product_unit_name: getUnitAbbreviationForCategory(categories, item.product_category_id),
+      })),
+    };
+    onSubmit(patched);
   };
 
   const tilesCategoryId = getTilesCategoryId(categories);
@@ -335,7 +367,7 @@ export default function ExternalSaleDialog({
                     tempId: crypto.randomUUID(),
                     product_name: "",
                     product_category_id: tilesCategoryId,
-                    product_unit_name: "",
+                    product_unit_name: getUnitAbbreviationForCategory(categories, tilesCategoryId),
                     quantity: 1,
                     unit_sale_price: 0,
                     note: "",
@@ -443,6 +475,7 @@ export default function ExternalSaleDialog({
                           {...register(`items.${index}.product_unit_name` as const)}
                           className="h-10"
                           disabled
+                          value={watchedItem.product_unit_name ?? ""}
                           placeholder="Auto"
                         />
                       </div>
@@ -603,4 +636,4 @@ export default function ExternalSaleDialog({
       </DialogContent>
     </Dialog>
   );
-}  
+}   

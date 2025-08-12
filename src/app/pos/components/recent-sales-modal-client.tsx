@@ -29,10 +29,11 @@ import {
 import { supabaseClient } from "@/lib/supabase/client";
 import type { SaleRecordForRecentSales, BranchForFilter, SaleItemDetailsForRecentSales } from "../types";
 
-// --- Type Definitions ---
+// --- Type Definitions (MODIFIED) ---
 type EditSaleFields = {
   customer_name: string;
   customer_phone: string | null;
+  sale_date: Date; // <-- ADDED: To handle the sale date editing
   sale_items: {
     id: string;
     quantity: number;
@@ -343,6 +344,8 @@ export default function RecentSalesModalClient({
     }
   };
 
+  // --- MODIFIED: handleEditSale ---
+  // Initializes the state for the edit modal, now including the sale_date.
   const handleEditSale = (sale: SaleRecordForRecentSales) => {
     setEditSaleState({
       open: true,
@@ -350,6 +353,7 @@ export default function RecentSalesModalClient({
       editedFields: {
         customer_name: sale.customer_name || "",
         customer_phone: sale.customer_phone || "",
+        sale_date: parseISO(sale.sale_date), // <-- ADDED: Parse string date to Date object
         sale_items: sale.sale_items.map(item => ({
           id: item.id,
           quantity: item.quantity,
@@ -376,6 +380,22 @@ export default function RecentSalesModalClient({
     });
   };
 
+  // --- NEW: handleEditSaleDateChange ---
+  // Handler for when a new date is selected in the edit modal's calendar.
+  const handleEditSaleDateChange = (date: Date | undefined) => {
+    if (!date) return;
+    setEditSaleState(prev => {
+      if (!prev.editedFields) return prev;
+      return {
+        ...prev,
+        editedFields: {
+          ...prev.editedFields,
+          sale_date: date,
+        },
+      };
+    });
+  };
+
   const handleEditSaleItemFieldChange = (
     idx: number,
     field: keyof EditSaleFields['sale_items'][0],
@@ -395,7 +415,6 @@ export default function RecentSalesModalClient({
     });
   };
 
-  // --- Calculate total amount for the edited sale dynamically ---
   const editedTotalAmount = useMemo(() => {
     if (!editSaleState.editedFields) return 0;
     return editSaleState.editedFields.sale_items.reduce(
@@ -404,6 +423,8 @@ export default function RecentSalesModalClient({
     );
   }, [editSaleState.editedFields]);
 
+  // --- MODIFIED: handleSaveEditSale ---
+  // Now includes the sale_date in the update payload.
   const handleSaveEditSale = async () => {
     if (!editSaleState.sale || !editSaleState.editedFields) return;
     setEditSaleState(prev => ({ ...prev, saving: true, error: null }));
@@ -417,10 +438,12 @@ export default function RecentSalesModalClient({
       return;
     }
 
+    // --- MODIFICATION ---
     const saleUpdate = {
       customer_name: editSaleState.editedFields.customer_name,
       customer_phone: editSaleState.editedFields.customer_phone,
-      total_amount: editedTotalAmount, // update total_amount
+      total_amount: editedTotalAmount,
+      sale_date: editSaleState.editedFields.sale_date.toISOString(), // <-- ADDED: Convert Date back to ISO string for DB
     };
 
     const saleItemsUpdate = editSaleState.editedFields.sale_items.map(item => {
@@ -460,7 +483,6 @@ export default function RecentSalesModalClient({
         if (itemError) throw new Error(itemError.message);
       }
 
-      // **MODIFICATION**: Close modal and re-fetch data to refresh the table
       setEditSaleState({
         open: false,
         sale: null,
@@ -468,7 +490,7 @@ export default function RecentSalesModalClient({
         saving: false,
         error: null,
       });
-      await fetchAllSales(); // This will re-fetch and update the table
+      await fetchAllSales();
 
     } catch (err: any) {
       setEditSaleState(prev => ({
@@ -494,6 +516,7 @@ export default function RecentSalesModalClient({
             Review and filter your latest sales transactions.
           </DialogDescription>
         </DialogHeader>
+        {/* ... (Error and stats cards remain the same) ... */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             <strong>Error loading sales:</strong> {error}
@@ -521,7 +544,7 @@ export default function RecentSalesModalClient({
             </CardContent>
           </Card>
         </div>
-        {/* --- FILTER SECTION --- */}
+        {/* ... (Filter section remains the same) ... */}
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div className="grid gap-1 flex-grow min-w-[210px]">
             <Label htmlFor="search_sales">Search</Label>
@@ -607,6 +630,8 @@ export default function RecentSalesModalClient({
             <Button onClick={handleResetFilters} variant="outline">Reset</Button>
           </div>
         </div>
+
+        {/* ... (Main table remains the same) ... */}
         <div
           className="w-full rounded border bg-white shadow-sm mb-2"
           style={{ maxHeight: "480px", overflow: "auto", minWidth: 1100 }}
@@ -696,92 +721,90 @@ export default function RecentSalesModalClient({
             </Table>
           )}
         </div>
+
+        {/* ... (Sale Details Modal remains the same) ... */}
         <Dialog open={isSaleDetailsDialogOpen} onOpenChange={setIsSaleDetailsDialogOpen}>
-          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Sale Details: {selectedSaleDetails?.transaction_reference}</DialogTitle>
-              <DialogDescription>
-                Details of the {selectedSaleDetails?.saleType === "External Sale" ? "external sale" : "sale"}.
-              </DialogDescription>
-            </DialogHeader>
-            {selectedSaleDetails && (
-              <>
-                <div className="grid grid-cols-2 gap-4 text-sm py-4">
-                  <p><span className="font-semibold">Type:</span> <span className={selectedSaleDetails?.saleType === "External Sale" ? "text-orange-700 font-bold" : "text-blue-700 font-bold"}>{selectedSaleDetails?.saleType}</span></p>
-                  <p><span className="font-semibold">Date:</span> {format(parseISO(selectedSaleDetails.sale_date), 'PPP')}</p>
-                  <p><span className="font-semibold">Cashier:</span> {selectedSaleDetails.users?.email || 'N/A'}</p>
-                  <p><span className="font-semibold">Branch:</span> {selectedSaleDetails.branches?.name || 'N/A'}</p>
-                  <p><span className="font-semibold">Customer:</span> {selectedSaleDetails.customer_name || 'Walk-in'}</p>
-                  <p><span className="font-semibold">Customer Phone:</span> {selectedSaleDetails.customer_phone || 'N/A'}</p>
-                  <p><span className="font-semibold">Total Amount:</span> {formatCurrency(selectedSaleDetails.total_amount)}</p>
-                  <p><span className="font-semibold">Payment Method:</span> {selectedSaleDetails.payment_method}</p>
-                  <p><span className="font-semibold">Status:</span> <span className={getStatusColorClass(selectedSaleDetails.status)}>{selectedSaleDetails.status.replace("_", " ").toUpperCase()}</span></p>
-                </div>
-                <h3 className="text-lg font-semibold mt-4 mb-3">Items Sold</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Unit Price</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Note</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedSaleDetails.sale_items && selectedSaleDetails.sale_items.length > 0 ? (
-                      selectedSaleDetails.sale_items.map(item => (
-                        <TableRow key={item.id}>
-                          <TableCell className="font-medium">
-                            {item.products?.name ||
-                              item.product_name ||
-                              'N/A'}
-                            {item.products?.unique_reference ? ` (${item.products.unique_reference})` : ""}
-                          </TableCell>
-                          <TableCell className="text-center">{item.quantity}</TableCell>
-                          <TableCell className="text-center">
-                            {item.products?.product_unit_abbreviation ||
-                              item.product_unit_name ||
-                              'N/A'}
-                          </TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.unit_sale_price)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.total_price)}</TableCell>
-                          <TableCell>{item.note || 'N/A'}</TableCell>
+            <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                <DialogTitle>Sale Details: {selectedSaleDetails?.transaction_reference}</DialogTitle>
+                <DialogDescription>
+                    Details of the {selectedSaleDetails?.saleType === "External Sale" ? "external sale" : "sale"}.
+                </DialogDescription>
+                </DialogHeader>
+                {selectedSaleDetails && (
+                <>
+                    <div className="grid grid-cols-2 gap-4 text-sm py-4">
+                    <p><span className="font-semibold">Type:</span> <span className={selectedSaleDetails?.saleType === "External Sale" ? "text-orange-700 font-bold" : "text-blue-700 font-bold"}>{selectedSaleDetails?.saleType}</span></p>
+                    <p><span className="font-semibold">Date:</span> {format(parseISO(selectedSaleDetails.sale_date), 'PPP')}</p>
+                    <p><span className="font-semibold">Cashier:</span> {selectedSaleDetails.users?.email || 'N/A'}</p>
+                    <p><span className="font-semibold">Branch:</span> {selectedSaleDetails.branches?.name || 'N/A'}</p>
+                    <p><span className="font-semibold">Customer:</span> {selectedSaleDetails.customer_name || 'Walk-in'}</p>
+                    <p><span className="font-semibold">Customer Phone:</span> {selectedSaleDetails.customer_phone || 'N/A'}</p>
+                    <p><span className="font-semibold">Total Amount:</span> {formatCurrency(selectedSaleDetails.total_amount)}</p>
+                    <p><span className="font-semibold">Payment Method:</span> {selectedSaleDetails.payment_method}</p>
+                    <p><span className="font-semibold">Status:</span> <span className={getStatusColorClass(selectedSaleDetails.status)}>{selectedSaleDetails.status.replace("_", " ").toUpperCase()}</span></p>
+                    </div>
+                    <h3 className="text-lg font-semibold mt-4 mb-3">Items Sold</h3>
+                    <Table>
+                    <TableHeader>
+                        <TableRow>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead className="text-right">Unit Price</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead>Note</TableHead>
                         </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-16 text-center">No items found for this sale.</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </>
-            )}
-            <DialogFooter>
-              <Button onClick={() => setIsSaleDetailsDialogOpen(false)}>Close</Button>
-              {selectedSaleDetails && (
-                <Button onClick={() => handleReprintReceipt(selectedSaleDetails.transaction_reference, selectedSaleDetails.saleType)}>
-                  <Printer className="h-4 w-4 mr-2" /> Reprint Receipt
-                </Button>
-              )}
-            </DialogFooter>
-          </DialogContent>
+                    </TableHeader>
+                    <TableBody>
+                        {selectedSaleDetails.sale_items && selectedSaleDetails.sale_items.length > 0 ? (
+                        selectedSaleDetails.sale_items.map(item => (
+                            <TableRow key={item.id}>
+                            <TableCell className="font-medium">
+                                {item.products?.name ||
+                                item.product_name ||
+                                'N/A'}
+                                {item.products?.unique_reference ? ` (${item.products.unique_reference})` : ""}
+                            </TableCell>
+                            <TableCell className="text-center">{item.quantity}</TableCell>
+                            <TableCell className="text-center">
+                                {item.products?.product_unit_abbreviation ||
+                                item.product_unit_name ||
+                                'N/A'}
+                            </TableCell>
+                            <TableCell className="text-right">{formatCurrency(item.unit_sale_price)}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(item.total_price)}</TableCell>
+                            <TableCell>{item.note || 'N/A'}</TableCell>
+                            </TableRow>
+                        ))
+                        ) : (
+                        <TableRow>
+                            <TableCell colSpan={6} className="h-16 text-center">No items found for this sale.</TableCell>
+                        </TableRow>
+                        )}
+                    </TableBody>
+                    </Table>
+                </>
+                )}
+                <DialogFooter>
+                <Button onClick={() => setIsSaleDetailsDialogOpen(false)}>Close</Button>
+                {selectedSaleDetails && (
+                    <Button onClick={() => handleReprintReceipt(selectedSaleDetails.transaction_reference, selectedSaleDetails.saleType)}>
+                    <Printer className="h-4 w-4 mr-2" /> Reprint Receipt
+                    </Button>
+                )}
+                </DialogFooter>
+            </DialogContent>
         </Dialog>
-        {/* Edit Sale Modal */}
+
+        {/* --- MODIFIED: Edit Sale Modal --- */}
+        {/* The UI for this modal now includes the sale date picker. */}
         <Dialog open={editSaleState.open} onOpenChange={open => setEditSaleState(prev => ({ ...prev, open }))}>
-          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Sale: {editSaleState.sale?.transaction_reference}</DialogTitle>
               <DialogDescription>
-                {isAdminOrGM
-                  ? "You can edit any sale."
-                  : isBranchManager
-                  ? "You can edit sales under your branch."
-                  : "You can only edit your own sales."
-                }
-                Update customer info, quantity, unit price, or note.
+                Update customer info, sale date, item quantity, unit price, or note.
               </DialogDescription>
             </DialogHeader>
             {editSaleState.editedFields && (
@@ -791,24 +814,58 @@ export default function RecentSalesModalClient({
                   handleSaveEditSale();
                 }}
               >
-                <div className="grid grid-cols-2 gap-4 text-sm py-4">
+                {/* --- MODIFIED: Layout to include date picker --- */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm py-4">
                   <div>
-                    <Label>Customer Name</Label>
+                    <Label htmlFor="edit_customer_name">Customer Name</Label>
                     <Input
+                      id="edit_customer_name"
                       value={editSaleState.editedFields.customer_name}
                       onChange={e => handleEditFieldChange("customer_name", e.target.value)}
                       required
                     />
                   </div>
                   <div>
-                    <Label>Customer Phone</Label>
+                    <Label htmlFor="edit_customer_phone">Customer Phone</Label>
                     <Input
+                      id="edit_customer_phone"
                       value={editSaleState.editedFields.customer_phone || ""}
                       onChange={e => handleEditFieldChange("customer_phone", e.target.value)}
                     />
                   </div>
+                  {/* --- NEW: Sale Date Picker --- */}
+                  <div>
+                    <Label htmlFor="edit_sale_date">Sale Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="edit_sale_date"
+                          variant={"outline"}
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !editSaleState.editedFields.sale_date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {editSaleState.editedFields.sale_date ? (
+                            format(editSaleState.editedFields.sale_date, "PPP")
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={editSaleState.editedFields.sale_date}
+                          onSelect={handleEditSaleDateChange}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
-                {/* --- Display Dynamic Total Amount --- */}
+
                 <div className="mb-3 flex items-center">
                   <span className="font-semibold mr-2">Total Amount:</span>
                   <span className="text-xl font-bold">{formatCurrency(editedTotalAmount)}</span>
@@ -857,6 +914,7 @@ export default function RecentSalesModalClient({
                                 handleEditSaleItemFieldChange(idx, "quantity", Number(e.target.value))
                               }
                               required
+                              className="min-w-[70px]"
                             />
                           </TableCell>
                           <TableCell>
@@ -869,6 +927,7 @@ export default function RecentSalesModalClient({
                                 handleEditSaleItemFieldChange(idx, "unit_sale_price", Number(e.target.value))
                               }
                               required
+                              className="min-w-[100px]"
                             />
                           </TableCell>
                           <TableCell>
@@ -890,7 +949,7 @@ export default function RecentSalesModalClient({
                 {editSaleState.error && (
                   <div className="text-red-700 mt-2">{editSaleState.error}</div>
                 )}
-                <DialogFooter>
+                <DialogFooter className="mt-4">
                   <Button type="button" variant="outline" onClick={() => setEditSaleState({ open: false, sale: null, editedFields: null, saving: false, error: null })}>Cancel</Button>
                   <Button type="submit" disabled={editSaleState.saving}>
                     {editSaleState.saving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
@@ -904,5 +963,4 @@ export default function RecentSalesModalClient({
       </DialogContent>
     </Dialog>
   );
-}
-  
+}  
