@@ -273,7 +273,12 @@ export default function SaleTableRowClient({
                   {saleItems.length > 0 ? (
                     saleItems.map(item => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium text-gray-900">{item.products?.name || 'N/A'}</TableCell>
+                        <TableCell className="font-medium text-gray-900">
+                          {item.products?.name || 'N/A'}
+                          {item.products?.unique_reference ? (
+                            <> (<span className="text-xs text-gray-500">{item.products.unique_reference}</span>)</>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-center">{item.quantity}</TableCell>
                         <TableCell className="text-center">{item.products?.product_unit_abbreviation || 'N/A'}</TableCell>
                         <TableCell className="text-right">{formatCurrency(item.unit_sale_price)}</TableCell>
@@ -361,4 +366,4 @@ export default function SaleTableRowClient({
       )}
     </TableRow>
   );
-}  
+} 

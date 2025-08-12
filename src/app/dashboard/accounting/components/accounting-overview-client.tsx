@@ -1,5 +1,3 @@
-// src/app/dashboard/accounting/accounting-overview-client.tsx
-
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
@@ -318,10 +316,7 @@ export default function AccountingOverviewClient({
                                         <span>Sales Income:</span>
                                         <span>{formatCurrency(branch.total_sales_income)}</span>
                                     </div>
-                                    <div className="flex justify-between items-center text-sm">
-                                        <span>Purchases Cost:</span>
-                                        <span>{formatCurrency(branch.total_purchases_cost)}</span>
-                                    </div>
+                                    {/* Removed Purchases Cost from the branch card */}
                                     <div className="flex justify-between items-center text-sm">
                                         <span>Expenses:</span>
                                         <span>{formatCurrency(branch.total_expenses_amount)}</span>
@@ -412,4 +407,4 @@ export default function AccountingOverviewClient({
             </div>
         </div>
     );
-}  
+}   

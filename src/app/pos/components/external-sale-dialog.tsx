@@ -49,11 +49,18 @@ export interface ExternalSaleDialogProps {
 
 // --- SUGGESTIONS FOR TILE DIMENSIONS ---
 const TILE_DIMENSIONS_SUGGESTIONS = [
-  "10cm x 10cm", "15cm x 15cm", "20cm x 20cm", "20cm x 30cm", "25cm x 25cm",
-  "30cm x 30cm", "30cm x 60cm", "33cm x 33cm", "40cm x 40cm", "45cm x 45cm",
-  "50cm x 50cm", "60cm x 60cm", "60cm x 120cm", "75cm x 75cm", "80cm x 80cm",
-  "90cm x 90cm", "100cm x 100cm", "120cm x 120cm", "120cm x 240cm", "120cm x 270cm",
-  "160cm x 320cm",
+  "2.5cm x 2.5cm |", "5cm x 5cm |", "5cm x 20cm |", "7.5cm x 15cm |", "7.5cm x 30cm |",
+  "10cm x 10cm |", "10cm x 20cm |", "10cm x 30cm |", "10cm x 40cm |",
+  "15cm x 15cm |", "15cm x 30cm |", "15cm x 60cm |", "15cm x 90cm |",
+  "20cm x 20cm |", "20cm x 30cm |", "20cm x 40cm |", "20cm x 50cm |", "20cm x 60cm |",
+  "20cm x 80cm |", "20cm x 120cm |", "22cm x 90cm |",
+  "25cm x 25cm |", "25cm x 40cm |", "25cm x 50cm |", "25cm x 60cm |",
+  "30cm x 30cm |", "30cm x 60cm |", "30cm x 90cm |", "30cm x 120cm |",
+  "33cm x 33cm |", "40cm x 40cm |", "40cm x 80cm |", "40cm x 120cm |",
+  "45cm x 45cm |", "45cm x 90cm |", "50cm x 50cm |", "50cm x 100cm |",
+  "60cm x 60cm |", "60cm x 120cm |", "75cm x 75cm |", "75cm x 150cm |",
+  "80cm x 80cm |", "90cm x 90cm |", "100cm x 100cm |",
+  "120cm x 120cm |", "120cm x 240cm |", "160cm x 320cm |"
 ];
 
 // --- AUTOCOMPLETE HOOKS ---
@@ -80,7 +87,13 @@ function useProductNameAutocomplete(itemsLength: number) {
 function getProductNameSuggestions(input: string) {
   if (!input) return [];
   const lower = input.toLowerCase();
-  return TILE_DIMENSIONS_SUGGESTIONS.filter((s) => s.toLowerCase().includes(lower));
+  // Only show if input starts with a number or matches any part
+  if (/^\d/.test(input.trim())) {
+    return TILE_DIMENSIONS_SUGGESTIONS.filter((s) =>
+      s.replace(/\s+/g, "").toLowerCase().includes(lower.replace(/\s+/g, ""))
+    );
+  }
+  return [];
 }
 
 function getItemError(
@@ -99,6 +112,12 @@ function getItemError(
     return (errors.items[index] as Record<string, FieldError | undefined>)[field];
   }
   return undefined;
+}
+
+// Helper to get default tiles category id
+function getTilesCategoryId(categories: CategoryForPos[]): string | null {
+  const found = categories.find(cat => cat.name?.toLowerCase().includes("tiles"));
+  return found?.id ?? null;
 }
 
 export default function ExternalSaleDialog({
@@ -125,17 +144,22 @@ export default function ExternalSaleDialog({
       date: new Date(),
       ...stableInitialValues.current,
     };
-
-    // Guarantee no duplicate "date" property; always a Date object
     if (typeof base.date === "string") {
       base.date = new Date(base.date);
     }
     if (!base.date || isNaN(new Date(base.date).getTime())) {
       base.date = new Date();
     }
-
+    // Ensure default category for each item (Tiles)
+    const tilesCategoryId = getTilesCategoryId(categories);
+    if (base.items && Array.isArray(base.items)) {
+      base.items = base.items.map(item => ({
+        ...item,
+        product_category_id: item.product_category_id ?? tilesCategoryId,
+      }));
+    }
     return base;
-   
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // <-- empty array, do not depend on stableInitialValues.current
 
   const resolver = zodResolver(externalSaleFormSchema) as any;
@@ -216,9 +240,11 @@ export default function ExternalSaleDialog({
     onSubmit(values);
   };
 
+  const tilesCategoryId = getTilesCategoryId(categories);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[780px] w-full max-h-[98vh] overflow-y-auto rounded-2xl">
+      <DialogContent className="sm:max-w-[900px] w-full max-h-[98vh] overflow-y-auto rounded-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">
             Record External Sale
@@ -308,7 +334,7 @@ export default function ExternalSaleDialog({
                   append({
                     tempId: crypto.randomUUID(),
                     product_name: "",
-                    product_category_id: null,
+                    product_category_id: tilesCategoryId,
                     product_unit_name: "",
                     quantity: 1,
                     unit_sale_price: 0,
@@ -337,7 +363,7 @@ export default function ExternalSaleDialog({
                     className="bg-white border border-muted rounded-xl p-4"
                   >
                     {/* Main row: Name, Category, Unit, Qty, Sale Price, Remove */}
-                    <div className="grid grid-cols-1 md:grid-cols-[2.3fr_1.8fr_1.1fr_1fr_1fr_40px] gap-4 items-end">
+                    <div className="grid grid-cols-1 md:grid-cols-[2fr_1.3fr_1fr_1fr_1fr_40px] gap-4 items-end">
                       <div className="relative">
                         <Label className="block mb-1">Name / Reference</Label>
                         <Input
@@ -376,7 +402,7 @@ export default function ExternalSaleDialog({
                       <div>
                         <Label className="block mb-1">Category</Label>
                         <Select
-                          value={watchedItem.product_category_id ?? "none"}
+                          value={watchedItem.product_category_id ?? tilesCategoryId ?? "none"}
                           onValueChange={(value) => {
                             setValue(
                               `items.${index}.product_category_id`,
@@ -398,7 +424,6 @@ export default function ExternalSaleDialog({
                             <SelectValue placeholder="Select Category" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
                             {categories.map((cat) => (
                               <SelectItem key={cat.id} value={cat.id}>
                                 {cat.name}
@@ -578,4 +603,4 @@ export default function ExternalSaleDialog({
       </DialogContent>
     </Dialog>
   );
-}             
+}  

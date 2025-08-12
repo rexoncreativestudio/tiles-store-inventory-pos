@@ -82,11 +82,10 @@ export default function AddPosExpenseModalClient({
 }: AddPosExpenseModalClientProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Only allow branch selection for admin/manager, else lock to current branch
+  // Role checks
   const canSelectBranch =
     ["admin", "general_manager", "branch_manager"].includes(currentUserRole);
 
-  // If cashier, get "Miscellaneous" category id
   const isCashier = currentUserRole === "cashier";
   const miscellaneousCategory =
     isCashier
@@ -94,6 +93,11 @@ export default function AddPosExpenseModalClient({
       : null;
   const miscellaneousCategoryId = miscellaneousCategory?.id ?? "";
 
+  // Find current branch object (for label if needed)
+  const currentBranch =
+    branches.find((b) => b.id === currentUserBranchId) || null;
+
+  // Always call hooks first!
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
@@ -105,7 +109,6 @@ export default function AddPosExpenseModalClient({
     },
   });
 
-  // Reset form on open
   useEffect(() => {
     if (isOpen) {
       form.reset({
@@ -119,9 +122,51 @@ export default function AddPosExpenseModalClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, miscellaneousCategoryId, canSelectBranch, currentUserBranchId, isCashier]);
 
-  // Insert expense into database
+  // Block modal if cashier is missing category or branch
+  if (
+    isCashier &&
+    (
+      !miscellaneousCategoryId ||
+      !currentUserBranchId ||
+      !currentBranch
+    ) &&
+    isOpen
+  ) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-lg w-full">
+          <DialogHeader>
+            <DialogTitle>Cannot Add Expense</DialogTitle>
+            <DialogDescription>
+              { !miscellaneousCategoryId && (
+                <>The &quot;Miscellaneous&quot; expense category is missing.<br /></>
+              )}
+              { (!currentUserBranchId || !currentBranch) && (
+                <>Your branch information is missing.<br /></>
+              )}
+              Please contact your administrator.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Handle submit
   const handleSubmit: SubmitHandler<ExpenseFormValues> = async (values) => {
     setIsSubmitting(true);
+
+    // Guard: If cashier and category/branch is missing, block submit
+    if (isCashier && (!miscellaneousCategoryId || !currentUserBranchId || !currentBranch)) {
+      toast.error("Required category or branch is missing. Contact admin.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const payload = {
@@ -131,10 +176,8 @@ export default function AddPosExpenseModalClient({
         vendor_notes: values.vendor_notes || null,
         branch_id: values.branch_id,
         recorded_by_user_id: currentCashierId,
-        // description: null, // Not in form but can be added if you want
       };
 
-      // Insert into Supabase
       const { data, error } = await supabaseClient
         .from("expenses")
         .insert([payload])
@@ -148,7 +191,6 @@ export default function AddPosExpenseModalClient({
         throw error;
       }
 
-      // Fix: Unwrap relationship arrays if present
       const formattedData: ExpenseRecordForPos = {
         ...data,
         expense_categories: Array.isArray(data.expense_categories)
@@ -172,7 +214,6 @@ export default function AddPosExpenseModalClient({
     }
   };
 
-  // --- FIELD ORDER: Date, Amount, Vendor/Notes, Expense Category, Branch ---
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg w-full">
@@ -262,7 +303,6 @@ export default function AddPosExpenseModalClient({
           <div>
             <Label htmlFor="expense_category_id">Expense Category</Label>
             {isCashier ? (
-              // Show only label/value for Miscellaneous, no dropdown
               <div className="h-11 flex items-center mt-1 rounded border px-3 bg-gray-50 text-muted-foreground">
                 {miscellaneousCategory?.name || "Miscellaneous"}
               </div>
@@ -296,24 +336,30 @@ export default function AddPosExpenseModalClient({
           {/* Branch */}
           <div>
             <Label htmlFor="branch_id">Branch</Label>
-            <Select
-              value={form.watch("branch_id")}
-              onValueChange={(val) =>
-                form.setValue("branch_id", val, { shouldValidate: true })
-              }
-              disabled={!canSelectBranch || isSubmitting}
-            >
-              <SelectTrigger className="w-full h-11 mt-1" id="branch_id">
-                <SelectValue placeholder="Select a branch" />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((branch) => (
-                  <SelectItem key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isCashier ? (
+              <div className="h-11 flex items-center mt-1 rounded border px-3 bg-gray-50 text-muted-foreground">
+                {currentBranch?.name || "Unknown Branch"}
+              </div>
+            ) : (
+              <Select
+                value={form.watch("branch_id")}
+                onValueChange={(val) =>
+                  form.setValue("branch_id", val, { shouldValidate: true })
+                }
+                disabled={!canSelectBranch || isSubmitting}
+              >
+                <SelectTrigger className="w-full h-11 mt-1" id="branch_id">
+                  <SelectValue placeholder="Select a branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {form.formState.errors.branch_id && (
               <span className="text-xs text-red-500">
                 {form.formState.errors.branch_id.message}
